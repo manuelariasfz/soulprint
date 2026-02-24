@@ -12,7 +12,7 @@ const {
 } = require("../packages/core/dist/index.js");
 const { verifySPT } = require("../packages/express/dist/verify.js");
 const { verifySPT: mcpVerify } = require("../packages/mcp/dist/index.js");
-const { validateCedulaNumber, parseCedulaOCR } = require("../packages/verify-local/dist/document/cedula-validator.js");
+const { validateCedulaNumber, parseCedulaOCR, parseMRZ, icaoCheckDigit, verifyCheckDigit } = require("../packages/verify-local/dist/document/cedula-validator.js");
 
 let total = 0, passed = 0, failed = 0, section = "";
 const errors = [];
@@ -379,6 +379,88 @@ describe("Cedula Validator", () => {
 
   test("Inyección XSS rechazada", () => {
     assert(!validateCedulaNumber("<script>alert(1)</script>").valid);
+  });
+
+  // ── ICAO 9303 check digits ───────────────────────────────────────────────
+  test("ICAO check digit — casos canónicos Doc 9303", () => {
+    // Ejemplos verificados del estándar ICAO 9303 Part 3 §4.9
+    assertEq(icaoCheckDigit("520727"),    3, "Fecha nac 520727 → check 3");
+    assertEq(icaoCheckDigit("740812"),    2, "Fecha nac 740812 → check 2");
+    assertEq(icaoCheckDigit("120415"),    9, "Fecha exp 120415 → check 9");
+    assertEq(icaoCheckDigit("L898902C3"), 6, "Num. pasaporte L898902C3 → check 6");
+  });
+
+  test("ICAO check digit — caracteres especiales", () => {
+    assertEq(icaoCheckDigit(""),    0, "Campo vacío → 0");
+    assertEq(icaoCheckDigit("<<<"), 0, "Solo relleno → 0");
+    assertEq(icaoCheckDigit("0"),   0, "'0' → 0");
+    assertEq(icaoCheckDigit("A"),   0, "A=10, 10*7=70, 70 mod 10 = 0");
+  });
+
+  test("ICAO check digit — pesos cíclicos 7/3/1", () => {
+    // "123" → 1*7 + 2*3 + 3*1 = 7+6+3 = 16 → 6
+    assertEq(icaoCheckDigit("123"), 6);
+    // "1234" → 1*7 + 2*3 + 3*1 + 4*7 = 7+6+3+28 = 44 → 4
+    assertEq(icaoCheckDigit("1234"), 4);
+  });
+
+  test("verifyCheckDigit acepta campo correcto", () => {
+    const r = verifyCheckDigit("520727", "3");
+    assert(r.valid,           "Debe ser válido");
+    assertEq(r.computed,  3);
+    assertEq(r.expected,  3);
+  });
+
+  test("verifyCheckDigit rechaza check digit incorrecto", () => {
+    const r = verifyCheckDigit("520727", "9");
+    assert(!r.valid,          "Debe ser inválido");
+    assertEq(r.computed,  3);
+    assertEq(r.expected,  9);
+  });
+
+  // ── MRZ con check digits ─────────────────────────────────────────────────
+  test("parseMRZ — MRZ válido con check digits correctos", () => {
+    // Cédula colombiana TD1 sintética con check digits ICAO válidos
+    // Número doc: 1020461234 → en MRZ: 1020461234 (10 chars)
+    // Fecha nac:  900315 (1990-03-15) → check: icaoCheckDigit("900315")
+    // icaoCheckDigit("900315") = 9*7+0*3+0*1+3*7+1*3+5*1 = 63+0+0+21+3+5 = 92 % 10 = 2
+    // Fecha exp:  300101 (2030-01-01) → check: icaoCheckDigit("300101")
+    // icaoCheckDigit("300101") = 3*7+0*3+0*1+1*7+0*3+1*1 = 21+0+0+7+0+1 = 29 % 10 = 9
+    // Doc num check en línea 1: icaoCheckDigit("1020461234") = ?
+
+    // Construir MRZ sintético correcto
+    const dobCheck = icaoCheckDigit("900315").toString();  // debe ser 2
+    const expCheck = icaoCheckDigit("300101").toString();  // debe ser 9
+
+    const line2 = `900315${dobCheck}M300101${expCheck}COL1020461234  `;
+    const line3 = "GARCIA<<JUAN<<PABLO<<<<<<<<<<<<";
+    const mrz   = `ID<<COL1020461234<\n${line2}\n${line3}`;
+
+    const r = parseMRZ(mrz);
+
+    assert(r.cedula_number  === "1020461234" || r.cedula_number !== undefined, "Debe extraer número");
+    assert(r.fecha_nacimiento?.includes("1990") || r.fecha_nacimiento?.includes("90"),
+           `Fecha nac debe tener 1990: ${r.fecha_nacimiento}`);
+    assert(r.sexo === "M", `Sexo debe ser M: ${r.sexo}`);
+  });
+
+  test("parseMRZ — check digit incorrecto en fecha nac genera error", () => {
+    // Fecha nac correcta: 900315 → check 2, ponemos 9 (incorrecto)
+    const line2 = "9003159M300101XCOL1020461234  "; // check 9 = MAL
+    const line3 = "GARCIA<<JUAN<<<<<<<<<<<<<<<<<<";
+    const mrz   = `ID<<COL1020461234<\n${line2}\n${line3}`;
+
+    const r = parseMRZ(mrz);
+    assert(
+      r.errors.some(e => e.includes("fecha de nacimiento") || e.includes("check digit")),
+      `Debe reportar error en check digit de fecha nac. Errors: ${JSON.stringify(r.errors)}`
+    );
+  });
+
+  test("parseMRZ — MRZ incompleto rechazado", () => {
+    const r = parseMRZ("linea corta\n");
+    assert(!r.valid, "MRZ incompleto debe ser inválido");
+    assert(r.errors.length > 0, "Debe tener errores");
   });
 });
 

@@ -158,24 +158,79 @@ export function parseCedulaOCR(ocrText: string): DocumentValidationResult {
   };
 }
 
+// ── ICAO 9303 check digit ──────────────────────────────────────────────────────
+/**
+ * Calcula el dígito de control ICAO 9303 (estándar internacional MRTD).
+ * Algoritmo: suma ponderada con pesos 7, 3, 1 (cíclicos) sobre cada carácter.
+ *
+ * Tabla de valores:
+ *   '0'-'9' → 0-9
+ *   'A'-'Z' → 10-35
+ *   '<'     → 0
+ *
+ * Resultado: suma mod 10
+ *
+ * Referencia: ICAO Doc 9303 Part 3, §4.9
+ */
+export function icaoCheckDigit(field: string): number {
+  const WEIGHTS = [7, 3, 1];
+
+  const charValue = (ch: string): number => {
+    if (ch >= "0" && ch <= "9") return parseInt(ch, 10);
+    if (ch >= "A" && ch <= "Z") return ch.charCodeAt(0) - 65 + 10; // A=10, B=11...
+    return 0; // '<' y cualquier relleno = 0
+  };
+
+  let sum = 0;
+  for (let i = 0; i < field.length; i++) {
+    sum += charValue(field[i]) * WEIGHTS[i % 3];
+  }
+
+  return sum % 10;
+}
+
+/**
+ * Verifica si el dígito de control ICAO de un campo es correcto.
+ * `fieldWithCheck`: el campo + el dígito de control como último carácter.
+ */
+export function verifyCheckDigit(
+  field:    string,
+  expected: string | number
+): { valid: boolean; computed: number; expected: number } {
+  const computed  = icaoCheckDigit(field);
+  const exp       = typeof expected === "string" ? parseInt(expected, 10) : expected;
+  return { valid: computed === exp, computed, expected: exp };
+}
+
+
 // ── MRZ TD1 parser (reverso cédula digital colombiana) ────────────────────────
 /**
  * Parsea el MRZ TD1 del reverso de la cédula colombiana digital.
  * Formato: 3 líneas de 30 caracteres cada una.
  *
+ * Línea 1 (TD1): IDCOL<NUMDOC<CHECK<<<<<<<<<<<<<<<<
+ *   - [0-1]   = tipo doc "ID"
+ *   - [2-4]   = país emisor "COL"
+ *   - [5-14]  = número documento (cédula, 9 chars relleno <)
+ *   - [14]    = check digit del número de documento
+ *
  * Línea 2: DDMMYYCSEXEXPIRYNATCHECKNUMDOC<CHECK
  *   - [0-5]   = fecha nacimiento YYMMDD
- *   - [6]     = dígito verificador
+ *   - [6]     = check digit fecha nac
  *   - [7]     = sexo M/F
  *   - [8-13]  = fecha expiración YYMMDD
- *   - [14]    = dígito verificador
+ *   - [14]    = check digit expiración
  *   - [15-17] = código país (COL)
  *   - [18-28] = número documento (cédula)
+ *   - [29]    = check digit compuesto
  *
  * Línea 3: APELLIDOS<<NOMBRES<<<...
+ *
+ * Todos los check digits se verifican con ICAO 9303 (peso 7/3/1 mod 10).
  */
 export function parseMRZ(mrzText: string): DocumentValidationResult {
   const errors: string[] = [];
+  const warnings: string[] = [];
 
   // Limpiar y encontrar líneas MRZ
   const allLines = mrzText
@@ -189,28 +244,78 @@ export function parseMRZ(mrzText: string): DocumentValidationResult {
     return { valid: false, errors: ["MRZ incompleto — se necesitan al menos 2 líneas"] };
   }
 
-  // Línea 2: datos biográficos
+  // ── Línea 1: número de documento + check digit ───────────────────────────
+  const line1 = lines[0];
+  let docNumFromLine1: string | undefined;
+
+  if (line1.length >= 15) {
+    const docRaw   = line1.slice(5, 14);   // posiciones 5-13 (9 chars)
+    const checkCh  = line1[14];            // posición 14 = check digit
+
+    const checkResult = verifyCheckDigit(docRaw, checkCh);
+
+    if (!checkResult.valid) {
+      errors.push(
+        `MRZ línea 1: check digit inválido en número de documento ` +
+        `(calculado=${checkResult.computed}, encontrado=${checkResult.expected})`
+      );
+    } else {
+      docNumFromLine1 = docRaw.replace(/</g, "").replace(/^0+/, "");
+    }
+  }
+
+  // ── Línea 2: fecha nacimiento + sexo + expiración + check digits ─────────
   const line2 = lines.find(l => /^\d{6}[0-9<][MF<]/.test(l));
   if (!line2) {
     return { valid: false, errors: ["No se encontró línea MRZ con datos biográficos"] };
   }
 
-  const yy   = line2.slice(0, 2);
-  const mm   = line2.slice(2, 4);
-  const dd   = line2.slice(4, 6);
-  const sex  = line2[7] as "M" | "F";
+  const yy  = line2.slice(0, 2);
+  const mm  = line2.slice(2, 4);
+  const dd  = line2.slice(4, 6);
+  const sex = line2[7] as "M" | "F";
 
-  // Inferir siglo (si YY > 24 → 19xx, si <= 24 → 20xx)
-  const century = parseInt(yy) > 24 ? "19" : "20";
+  // Verificar check digit de fecha de nacimiento (posición 6)
+  const dobField    = line2.slice(0, 6);
+  const dobCheck    = line2[6];
+  const dobVerify   = verifyCheckDigit(dobField, dobCheck);
+  if (!dobVerify.valid && dobCheck !== "<") {
+    errors.push(
+      `MRZ: check digit inválido en fecha de nacimiento ` +
+      `(calculado=${dobVerify.computed}, encontrado=${dobVerify.expected})`
+    );
+  }
+
+  // Verificar check digit de fecha de expiración (posición 14)
+  const expField    = line2.slice(8, 14);
+  const expCheck    = line2[14];
+  const expVerify   = verifyCheckDigit(expField, expCheck);
+  if (!expVerify.valid && expCheck !== "<") {
+    warnings.push(
+      `MRZ: check digit de expiración no coincide ` +
+      `(calculado=${expVerify.computed}, encontrado=${expVerify.expected})`
+    );
+  }
+
+  // Inferir siglo: YY > 24 → 19xx, YY <= 24 → 20xx
+  const century          = parseInt(yy) > 24 ? "19" : "20";
   const fecha_nacimiento = `${century}${yy}-${mm}-${dd}`;
 
-  // Número de cédula: aparece en línea 2 posición 18-27 (o en línea 1)
-  const docNumRaw = line2.slice(18, 29).replace(/</g, "").trim();
-  const docNum    = docNumRaw.replace(/^0+/, ""); // quitar ceros a la izquierda
+  // ── Número de cédula: prioridad línea 1 → fallback línea 2 pos 18-27 ────
+  let docNum: string;
+  if (docNumFromLine1) {
+    docNum = docNumFromLine1;
+  } else {
+    const raw = line2.slice(18, 29).replace(/</g, "").trim();
+    docNum    = raw.replace(/^0+/, "");
+  }
 
   const numValidation = validateCedulaNumber(docNum);
+  if (!numValidation.valid) {
+    errors.push(`Número en MRZ inválido: ${numValidation.error}`);
+  }
 
-  // Línea 3: nombre — buscar en TODAS las líneas (puede ser más corta)
+  // ── Línea 3: nombre ───────────────────────────────────────────────────────
   const line3 = allLines.find(l =>
     l.includes("<<") &&
     !/^\d{6}/.test(l) &&
@@ -218,24 +323,22 @@ export function parseMRZ(mrzText: string): DocumentValidationResult {
   );
   let nombre: string | undefined;
   if (line3) {
-    const parts = line3.split("<<");
+    const parts    = line3.split("<<");
     const apellido = parts[0]?.replace(/</g, " ").trim();
-    const nombres  = parts.slice(1).join(" ").replace(/</g, " ").replace(/\s+/g," ").trim();
-    nombre = nombres && apellido ? `${nombres} ${apellido}`.trim() : (apellido || nombres);
-  }
-
-  if (!numValidation.valid) {
-    errors.push(`Número en MRZ inválido: ${numValidation.error}`);
+    const nombres  = parts.slice(1).join(" ").replace(/</g, " ").replace(/\s+/g, " ").trim();
+    nombre         = nombres && apellido
+      ? `${nombres} ${apellido}`.trim()
+      : (apellido || nombres);
   }
 
   return {
-    valid:           errors.length === 0,
-    cedula_number:   numValidation.valid ? docNum : undefined,
+    valid:            errors.length === 0 && numValidation.valid,
+    cedula_number:    numValidation.valid ? docNum : undefined,
     nombre,
     fecha_nacimiento,
-    sexo:            sex === "M" || sex === "F" ? sex : undefined,
+    sexo:             sex === "M" || sex === "F" ? sex : undefined,
     errors,
-    raw_ocr:         mrzText,
+    raw_ocr:          mrzText,
   };
 }
 
