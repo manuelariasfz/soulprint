@@ -144,6 +144,9 @@ importers:
       '@libp2p/tcp':
         specifier: 10.1.19
         version: 10.1.19
+      ethers:
+        specifier: ^6.16.0
+        version: 6.16.0
       libp2p:
         specifier: 2.10.0
         version: 2.10.0

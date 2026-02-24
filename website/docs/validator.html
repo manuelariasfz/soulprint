@@ -136,8 +136,60 @@ GET /credentials/github/callback
     </table>
 
 
-    <h2>Blockchain Backup <span style="font-size:0.7em;background:#f4a261;color:#fff;padding:2px 8px;border-radius:10px;margin-left:8px">v0.3.2</span></h2>
-    <p>Soulprint v0.3.2 adds <strong>async blockchain backup</strong> — P2P is primary, blockchain is permanent record. No downtime if blockchain is unavailable.</p>
+
+    <h2>On-chain Governance <span style="font-size:0.7em;background:#6a4c93;color:#fff;padding:2px 8px;border-radius:10px;margin-left:8px">v0.3.3</span></h2>
+    <p>The <strong>GovernanceModule</strong> ensures that no single entity — not even the deployer — can change the <code>PROTOCOL_HASH</code> without a supermajority of verified validators.</p>
+
+    <h3>How it works</h3>
+    <pre><code><span class="comment"># Any upgrade to PROTOCOL_HASH requires:</span>
+1. proposeUpgrade(did, newHash, rationale)   ← verified identity required
+2. voteOnProposal(id, did, approve)          ← 70% supermajority needed
+3. 48h timelock                              ← humans can veto (25% threshold)
+4. executeProposal(id)                       ← anyone can execute after timelock
+
+<span class="comment"># Emergency veto during timelock:</span>
+If 25%+ of validators vote AGAINST → proposal VETOED immediately</code></pre>
+
+    <h3>Security guarantees</h3>
+    <table>
+      <tr><th>Guarantee</th><th>Mechanism</th></tr>
+      <tr><td>1 identity = 1 vote</td><td>DID must have verified ZK proof in SoulprintRegistry</td></tr>
+      <tr><td>No AI takeover</td><td>Biometric identity required per voter — can't create infinite voters</td></tr>
+      <tr><td>No fast coup</td><td>48h timelock gives humans time to react</td></tr>
+      <tr><td>Immutable parameters</td><td>70% / 25% / 48h hardcoded — not upgradeable</td></tr>
+      <tr><td>Full audit trail</td><td><code>hashHistory[]</code> on-chain — every approved hash recorded</td></tr>
+    </table>
+
+    <h3>Governance endpoints</h3>
+    <pre><code><span class="comment"># Get governance status</span>
+curl http://localhost:4888/governance
+
+{
+  "currentApprovedHash": "0xdfe1ccca...",
+  "blockchainConnected": true,
+  "activeProposals": 0,
+  "hashHistory": ["0xdfe1ccca..."],
+  "nodeCompatible": true
+}
+
+<span class="comment"># Propose an upgrade (requires verified identity on-chain)</span>
+curl -X POST http://localhost:4888/governance/propose \
+  -H "Content-Type: application/json" \
+  -d '{"did":"did:key:z6Mk...","newHash":"0xnew...","rationale":"Security patch v1.1"}'
+
+<span class="comment"># Vote on a proposal</span>
+curl -X POST http://localhost:4888/governance/vote \
+  -d '{"proposalId":0,"did":"did:key:z6Mk...","approve":true}'
+
+<span class="comment"># Execute after timelock (48h)</span>
+curl -X POST http://localhost:4888/governance/execute \
+  -d '{"proposalId":0}'</code></pre>
+
+    <h3>Contract — Base Sepolia</h3>
+    <p><a href="https://sepolia.basescan.org/address/0xE74Cd1Aa66541dF76e5a82a05F11f80B31FCe217" target="_blank">0xE74Cd1Aa66541dF76e5a82a05F11f80B31FCe217 ↗</a></p>
+
+    <h2>Blockchain Backup <span style="font-size:0.7em;background:#f4a261;color:#fff;padding:2px 8px;border-radius:10px;margin-left:8px">v0.3.3</span></h2>
+    <p>Soulprint v0.3.3 adds <strong>async blockchain backup</strong> — P2P is primary, blockchain is permanent record. No downtime if blockchain is unavailable.</p>
 
     <h3>Architecture</h3>
     <pre><code><span class="comment"># P2P commits instantly (no gas, no wait)</span>

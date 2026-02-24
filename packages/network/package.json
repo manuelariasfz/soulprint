@@ -1,6 +1,6 @@
 {
   "name": "soulprint-network",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Soulprint validator node — HTTP server that verifies ZK proofs, co-signs SPTs, anti-Sybil registry",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -43,6 +43,7 @@
     "@libp2p/mdns": "11.0.47",
     "@libp2p/ping": "2.0.37",
     "@libp2p/tcp": "10.1.19",
+    "ethers": "^6.16.0",
     "libp2p": "2.10.0",
     "nodemailer": "^8.0.1",
     "otpauth": "^9.5.0",

@@ -169,4 +169,25 @@ contract ValidatorRegistry is ProtocolConstants {
     function getNode(string calldata did) external view returns (ValidatorNode memory) {
         return nodes[did];
     }
+    /**
+     * @notice Retorna campos de un nodo por DID (para governance).
+     */
+    function getNodeFields(string calldata did)
+        external view
+        returns (
+            string memory url_,
+            string memory did_,
+            bytes32 protocolHash_,
+            uint64  registeredAt_,
+            uint64  lastSeen_,
+            uint32  totalVerified_,
+            bool    active_,
+            bool    compatible_
+        )
+    {
+        ValidatorNode memory n = nodes[did];
+        return (n.url, n.did, n.protocolHash, n.registeredAt,
+                n.lastSeen, n.totalVerified, n.active, n.compatible);
+    }
+
 }

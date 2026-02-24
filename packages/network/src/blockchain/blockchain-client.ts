@@ -23,8 +23,12 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
-import { join }   from "node:path";
-import { homedir } from "node:os";
+import { join, dirname }   from "node:path";
+import { homedir }  from "node:os";
+import { fileURLToPath } from "node:url";
+
+// ESM-compatible __dirname
+const __dir = dirname(fileURLToPath(import.meta.url));
 
 // ── ABI mínimos para interactuar con los contratos ────────────────────────────
 // Solo las funciones que usa el nodo validador
@@ -51,17 +55,73 @@ const VALIDATOR_REG_ABI = [
   "function heartbeat(string did, uint32 totalVerified) external",
   "function getActiveNodes() view returns (tuple(string url, string did, bytes32 protocolHash, uint64 registeredAt, uint64 lastSeen, uint32 totalVerified, bool active, bool compatible)[])",
   "function PROTOCOL_HASH() view returns (bytes32)",
+  "function compatibleNodes() view returns (uint256)",
 ] as const;
+
+const GOVERNANCE_ABI = [
+  // State
+  "function currentApprovedHash() view returns (bytes32)",
+  "function totalProposals() view returns (uint256)",
+  "function APPROVAL_THRESHOLD_BPS() view returns (uint256)",
+  "function VETO_THRESHOLD_BPS() view returns (uint256)",
+  "function TIMELOCK_DELAY() view returns (uint64)",
+  "function MINIMUM_QUORUM() view returns (uint32)",
+  // Actions
+  "function proposeUpgrade(string did, bytes32 newHash, string rationale) external returns (uint256)",
+  "function voteOnProposal(uint256 proposalId, string did, bool approve) external",
+  "function executeProposal(uint256 proposalId) external",
+  // Views
+  "function getProposal(uint256 id) view returns (tuple(uint256 id, bytes32 newHash, string rationale, string proposerDid, address proposerAddr, uint64 createdAt, uint64 approvedAt, uint64 executedAt, uint32 votesFor, uint32 votesAgainst, uint8 state))",
+  "function getActiveProposals() view returns (tuple(uint256 id, bytes32 newHash, string rationale, string proposerDid, address proposerAddr, uint64 createdAt, uint64 approvedAt, uint64 executedAt, uint32 votesFor, uint32 votesAgainst, uint8 state)[])",
+  "function getHashHistory() view returns (bytes32[])",
+  "function isCurrentHashValid(bytes32 hash) view returns (bool)",
+  "function getApprovalPercentage(uint256 id) view returns (uint256 forPct, uint256 againstPct, uint32 activeNodes)",
+  "function timelockRemaining(uint256 id) view returns (uint64)",
+  // Events
+  "event ProposalCreated(uint256 indexed id, bytes32 newHash, string proposerDid, string rationale, uint64 expiresAt)",
+  "event VoteCast(uint256 indexed proposalId, string voterDid, bool approve, uint32 totalFor, uint32 totalAgainst)",
+  "event ProposalApproved(uint256 indexed id, bytes32 newHash, uint64 executeAfter)",
+  "event ProposalExecuted(uint256 indexed id, bytes32 oldHash, bytes32 newHash, uint64 timestamp)",
+  "event ProposalRejected(uint256 indexed id, string reason)",
+  "event EmergencyVeto(uint256 indexed id, uint32 vetoes, uint32 totalVoters)",
+] as const;
+
+// ── ProposalState enum (mirror de Solidity) ───────────────────────────────────
+export const ProposalState = {
+  ACTIVE:   0,
+  APPROVED: 1,
+  EXECUTED: 2,
+  REJECTED: 3,
+  EXPIRED:  4,
+} as const;
+
+export type ProposalStateType = typeof ProposalState[keyof typeof ProposalState];
+
+export interface GovernanceProposal {
+  id:           number;
+  newHash:      string;
+  rationale:    string;
+  proposerDid:  string;
+  proposerAddr: string;
+  createdAt:    number;
+  approvedAt:   number;
+  executedAt:   number;
+  votesFor:     number;
+  votesAgainst: number;
+  state:        ProposalStateType;
+  stateName:    string;
+}
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 
 export interface BlockchainConfig {
-  rpcUrl:          string;
-  privateKey:      string;
-  registryAddr:    string;
-  ledgerAddr:      string;
+  rpcUrl:           string;
+  privateKey:       string;
+  registryAddr:     string;
+  ledgerAddr:       string;
   validatorRegAddr?: string;
-  protocolHash:    string;   // must match PROTOCOL_HASH on-chain
+  governanceAddr?:  string;
+  protocolHash:     string;   // must match PROTOCOL_HASH on-chain
 }
 
 export interface OnChainReputation {
@@ -82,7 +142,7 @@ export function loadBlockchainConfig(): BlockchainConfig | null {
   if (!rpcUrl || !privateKey) return null;
 
   // Buscar direcciones en deployments/
-  const deploymentsDir = join(__dirname, "..", "..", "blockchain", "deployments");
+  const deploymentsDir = join(__dir, "..", "..", "..", "blockchain", "deployments");
   const deployFile     = join(deploymentsDir, `${network}.json`);
 
   if (!existsSync(deployFile)) {
@@ -95,10 +155,11 @@ export function loadBlockchainConfig(): BlockchainConfig | null {
   return {
     rpcUrl,
     privateKey,
-    registryAddr:    deployment.contracts.SoulprintRegistry,
-    ledgerAddr:      deployment.contracts.AttestationLedger,
+    registryAddr:     deployment.contracts.SoulprintRegistry,
+    ledgerAddr:       deployment.contracts.AttestationLedger,
     validatorRegAddr: deployment.contracts.ValidatorRegistry,
-    protocolHash:    deployment.protocolHash,
+    governanceAddr:   deployment.contracts.GovernanceModule,
+    protocolHash:     deployment.protocolHash,
   };
 }
 
@@ -106,11 +167,12 @@ export function loadBlockchainConfig(): BlockchainConfig | null {
 
 export class SoulprintBlockchainClient {
   private config: BlockchainConfig;
-  private provider: any = null;
-  private signer:   any = null;
-  private registry: any = null;
-  private ledger:   any = null;
+  private provider:     any = null;
+  private signer:       any = null;
+  private registry:     any = null;
+  private ledger:       any = null;
   private validatorReg: any = null;
+  private governance:   any = null;
   private connected = false;
 
   constructor(config: BlockchainConfig) {
@@ -136,6 +198,13 @@ export class SoulprintBlockchainClient {
 
       if (this.config.validatorRegAddr) {
         this.validatorReg = new ethers.Contract(this.config.validatorRegAddr, VALIDATOR_REG_ABI, this.signer);
+      }
+
+      if (this.config.governanceAddr) {
+        this.governance = new ethers.Contract(this.config.governanceAddr, GOVERNANCE_ABI, this.signer);
+        const govHash = await this.governance.currentApprovedHash();
+        console.log(`[blockchain]    Governance: ${this.config.governanceAddr}`);
+        console.log(`[blockchain]    Current approved hash: ${govHash.slice(0, 10)}...`);
       }
 
       // Verificar que el contrato tiene el mismo PROTOCOL_HASH
@@ -337,5 +406,165 @@ export class SoulprintBlockchainClient {
         compatible: n.compatible,
       }));
     } catch { return []; }
+  }
+
+  // ── Governance ─────────────────────────────────────────────────────────────
+
+  /**
+   * Retorna el hash actualmente aprobado por governance.
+   * Los nodos deben comparar esto con su PROTOCOL_HASH al arrancar.
+   */
+  async getCurrentApprovedHash(): Promise<string | null> {
+    if (!this.connected || !this.governance) return null;
+    try {
+      return await this.governance.currentApprovedHash();
+    } catch { return null; }
+  }
+
+  /**
+   * Verifica si el hash actual del nodo está aprobado por governance.
+   */
+  async isHashApproved(hash: string): Promise<boolean> {
+    if (!this.connected || !this.governance) return true; // fallback: asumir OK
+    try {
+      return await this.governance.isCurrentHashValid(hash);
+    } catch { return true; }
+  }
+
+  /**
+   * Propone un upgrade del PROTOCOL_HASH.
+   * Solo validadores con identidad verificada pueden proponer.
+   *
+   * @returns txHash + proposalId, o null si falla
+   */
+  async proposeUpgrade(params: {
+    did:       string;
+    newHash:   string;
+    rationale: string;
+  }): Promise<{ txHash: string; proposalId: number } | null> {
+    if (!this.connected || !this.governance) return null;
+    try {
+      const tx      = await this.governance.proposeUpgrade(params.did, params.newHash, params.rationale);
+      const receipt = await tx.wait();
+      // Extraer proposalId del evento ProposalCreated
+      const log = receipt.logs?.find((l: any) => l.fragment?.name === "ProposalCreated");
+      const proposalId = log ? Number(log.args[0]) : -1;
+      console.log(`[governance] ✅ Proposal #${proposalId} created | tx: ${receipt.hash}`);
+      return { txHash: receipt.hash, proposalId };
+    } catch (err: any) {
+      console.error(`[governance] proposeUpgrade failed: ${err.message?.slice(0, 100)}`);
+      return null;
+    }
+  }
+
+  /**
+   * Vota en una propuesta de governance.
+   * @param approve true = a favor | false = en contra / veto
+   */
+  async voteOnProposal(params: {
+    proposalId: number;
+    did:        string;
+    approve:    boolean;
+  }): Promise<string | null> {
+    if (!this.connected || !this.governance) return null;
+    try {
+      const tx      = await this.governance.voteOnProposal(params.proposalId, params.did, params.approve);
+      const receipt = await tx.wait();
+      const action  = params.approve ? "✅ FOR" : "🚫 AGAINST";
+      console.log(`[governance] ${action} Proposal #${params.proposalId} | tx: ${receipt.hash}`);
+      return receipt.hash;
+    } catch (err: any) {
+      console.error(`[governance] voteOnProposal failed: ${err.message?.slice(0, 100)}`);
+      return null;
+    }
+  }
+
+  /**
+   * Ejecuta una propuesta aprobada una vez que el timelock expiró.
+   */
+  async executeProposal(proposalId: number): Promise<string | null> {
+    if (!this.connected || !this.governance) return null;
+    try {
+      const tx      = await this.governance.executeProposal(proposalId);
+      const receipt = await tx.wait();
+      console.log(`[governance] ✅ Proposal #${proposalId} EXECUTED | tx: ${receipt.hash}`);
+      return receipt.hash;
+    } catch (err: any) {
+      console.error(`[governance] executeProposal failed: ${err.message?.slice(0, 100)}`);
+      return null;
+    }
+  }
+
+  /**
+   * Retorna estado completo de una propuesta.
+   */
+  async getProposal(proposalId: number): Promise<GovernanceProposal | null> {
+    if (!this.connected || !this.governance) return null;
+    try {
+      // Verificar que la propuesta existe (Solidity retorna zero-struct si no existe)
+      const total = Number(await this.governance.totalProposals());
+      if (proposalId >= total) return null;
+      const STATE_NAMES = ["ACTIVE", "APPROVED", "EXECUTED", "REJECTED", "EXPIRED"];
+      const p = await this.governance.getProposal(proposalId);
+      return {
+        id:           Number(p.id),
+        newHash:      p.newHash,
+        rationale:    p.rationale,
+        proposerDid:  p.proposerDid,
+        proposerAddr: p.proposerAddr,
+        createdAt:    Number(p.createdAt),
+        approvedAt:   Number(p.approvedAt),
+        executedAt:   Number(p.executedAt),
+        votesFor:     Number(p.votesFor),
+        votesAgainst: Number(p.votesAgainst),
+        state:        Number(p.state) as ProposalStateType,
+        stateName:    STATE_NAMES[Number(p.state)] ?? "UNKNOWN",
+      };
+    } catch { return null; }
+  }
+
+  /**
+   * Lista todas las propuestas activas o en timelock.
+   */
+  async getActiveProposals(): Promise<GovernanceProposal[]> {
+    if (!this.connected || !this.governance) return [];
+    try {
+      const STATE_NAMES = ["ACTIVE", "APPROVED", "EXECUTED", "REJECTED", "EXPIRED"];
+      const proposals = await this.governance.getActiveProposals();
+      return proposals.map((p: any) => ({
+        id:           Number(p.id),
+        newHash:      p.newHash,
+        rationale:    p.rationale,
+        proposerDid:  p.proposerDid,
+        proposerAddr: p.proposerAddr,
+        createdAt:    Number(p.createdAt),
+        approvedAt:   Number(p.approvedAt),
+        executedAt:   Number(p.executedAt),
+        votesFor:     Number(p.votesFor),
+        votesAgainst: Number(p.votesAgainst),
+        state:        Number(p.state) as ProposalStateType,
+        stateName:    STATE_NAMES[Number(p.state)] ?? "UNKNOWN",
+      }));
+    } catch { return []; }
+  }
+
+  /**
+   * Historial de todos los hashes aprobados (auditoría).
+   */
+  async getHashHistory(): Promise<string[]> {
+    if (!this.connected || !this.governance) return [];
+    try {
+      return await this.governance.getHashHistory();
+    } catch { return []; }
+  }
+
+  /**
+   * Segundos restantes del timelock de una propuesta aprobada.
+   */
+  async getTimelockRemaining(proposalId: number): Promise<number> {
+    if (!this.connected || !this.governance) return 0;
+    try {
+      return Number(await this.governance.timelockRemaining(proposalId));
+    } catch { return 0; }
   }
 }
