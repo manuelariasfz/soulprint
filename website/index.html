@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- Primary SEO -->
+  <title>Soulprint — Decentralized KYC Identity for AI Agents</title>
+  <meta name="description" content="Soulprint proves there's a verified human behind any AI bot — using Zero-Knowledge Proofs, no servers, no paid APIs, no PII stored. Open protocol for the age of AI agents.">
+  <meta name="keywords" content="decentralized identity, KYC, AI agents, zero knowledge proof, ZKP, MCP, model context protocol, did, sybil resistance, anti-sybil, bot verification, human verification, circom, snarkjs, colombia cedula, biometric, privacy">
+  <link rel="canonical" href="https://manuelariasfz.github.io/soulprint/">
+
+  <!-- Open Graph (LinkedIn, Facebook, Slack previews) -->
+  <meta property="og:type"        content="website">
+  <meta property="og:url"         content="https://manuelariasfz.github.io/soulprint/">
+  <meta property="og:title"       content="Soulprint — Decentralized KYC for AI Agents">
+  <meta property="og:description" content="Every bot has a soul behind it. Prove yours — without revealing who you are.">
+  <meta property="og:image"       content="https://manuelariasfz.github.io/soulprint/og-image.png">
+  <meta property="og:site_name"   content="Soulprint Protocol">
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card"        content="summary_large_image">
+  <meta name="twitter:title"       content="Soulprint — Decentralized KYC for AI Agents">
+  <meta name="twitter:description" content="ZK proof that your bot is backed by a real human. Open source, no servers, no PII.">
+  <meta name="twitter:image"       content="https://manuelariasfz.github.io/soulprint/og-image.png">
+
+  <!-- Schema.org SoftwareApplication -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Soulprint",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "Linux, macOS, Windows",
+    "description": "Decentralized KYC identity protocol for AI agents. Zero-Knowledge Proof that a real human is behind any bot.",
+    "url": "https://manuelariasfz.github.io/soulprint/",
+    "downloadUrl": "https://www.npmjs.com/package/soulprint",
+    "softwareVersion": "0.1.0",
+    "author": {
+      "@type": "Person",
+      "name": "Felipe Arias",
+      "url": "https://github.com/manuelariasfz"
+    },
+    "license": "https://opensource.org/licenses/MIT",
+    "codeRepository": "https://github.com/manuelariasfz/soulprint",
+    "keywords": ["zero-knowledge proof", "KYC", "decentralized identity", "AI agents", "MCP", "privacy", "anti-sybil"]
+  }
+  </script>
+
+  <!-- Schema.org TechArticle (the spec) -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    "name": "SIP-v0.1 — Soulprint Identity Protocol Specification",
+    "description": "Technical specification for the Soulprint Identity Protocol — a decentralized, privacy-preserving KYC standard for AI agents.",
+    "url": "https://github.com/manuelariasfz/soulprint/blob/main/specs/SIP-v0.1.md",
+    "author": { "@type": "Person", "name": "Felipe Arias" },
+    "datePublished": "2026-02-24"
+  }
+  </script>
+
+  <style>
+    :root {
+      --black:  #0d0d0d;
+      --white:  #f5f5f5;
+      --accent: #7c3aed;
+      --accent2:#06b6d4;
+      --gray:   #6b7280;
+      --border: #1f2937;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--black);
+      color: var(--white);
+      line-height: 1.6;
+    }
+
+    /* Nav */
+    nav {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 1rem 2rem; border-bottom: 1px solid var(--border);
+      position: sticky; top: 0; background: var(--black); z-index: 100;
+    }
+    .logo { font-size: 1.2rem; font-weight: 700; color: var(--accent); }
+    .nav-links { display: flex; gap: 1.5rem; }
+    .nav-links a { color: var(--gray); text-decoration: none; font-size: 0.9rem; transition: color 0.2s; }
+    .nav-links a:hover { color: var(--white); }
+    .github-btn {
+      background: var(--border); color: var(--white); border: none;
+      padding: 0.4rem 1rem; border-radius: 6px; cursor: pointer; font-size: 0.85rem;
+      text-decoration: none; transition: background 0.2s;
+    }
+    .github-btn:hover { background: #374151; }
+
+    /* Hero */
+    .hero {
+      text-align: center; padding: 5rem 2rem 3rem;
+      max-width: 860px; margin: 0 auto;
+    }
+    .hero-badge {
+      display: inline-block; background: #1e1b4b; color: #a78bfa;
+      border: 1px solid #4c1d95; padding: 0.3rem 0.8rem;
+      border-radius: 20px; font-size: 0.75rem; margin-bottom: 1.5rem;
+    }
+    h1 {
+      font-size: clamp(2.5rem, 6vw, 4rem); font-weight: 800;
+      background: linear-gradient(135deg, #fff 0%, #a78bfa 50%, #06b6d4 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      line-height: 1.1; margin-bottom: 1.5rem;
+    }
+    .tagline {
+      font-size: 1.2rem; color: var(--gray); margin-bottom: 2rem;
+      max-width: 600px; margin-left: auto; margin-right: auto;
+    }
+    .cta-row {
+      display: flex; gap: 1rem; justify-content: center;
+      flex-wrap: wrap; margin-bottom: 3rem;
+    }
+    .btn-primary {
+      background: var(--accent); color: #fff; padding: 0.7rem 1.5rem;
+      border-radius: 8px; text-decoration: none; font-weight: 600;
+      font-size: 0.95rem; transition: background 0.2s;
+    }
+    .btn-primary:hover { background: #6d28d9; }
+    .btn-secondary {
+      background: transparent; color: var(--white); padding: 0.7rem 1.5rem;
+      border-radius: 8px; text-decoration: none; font-weight: 600;
+      font-size: 0.95rem; border: 1px solid var(--border); transition: border-color 0.2s;
+    }
+    .btn-secondary:hover { border-color: #4b5563; }
+
+    /* Terminal demo */
+    .terminal {
+      background: #111; border: 1px solid var(--border); border-radius: 10px;
+      padding: 1.5rem; text-align: left; font-family: 'Fira Code', 'Courier New', monospace;
+      font-size: 0.85rem; max-width: 640px; margin: 0 auto 4rem;
+      box-shadow: 0 0 60px rgba(124, 58, 237, 0.15);
+    }
+    .terminal-bar { display: flex; gap: 6px; margin-bottom: 1rem; }
+    .dot { width: 12px; height: 12px; border-radius: 50%; }
+    .dot-r { background: #ff5f57; }
+    .dot-y { background: #febc2e; }
+    .dot-g { background: #28c840; }
+    .line-cmd  { color: #a78bfa; }
+    .line-ok   { color: #34d399; }
+    .line-info { color: var(--gray); }
+    .line-val  { color: #fbbf24; }
+
+    /* Stats */
+    .stats {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem; max-width: 900px; margin: 0 auto 5rem; padding: 0 2rem;
+    }
+    .stat {
+      background: #111; border: 1px solid var(--border); border-radius: 10px;
+      padding: 1.5rem; text-align: center;
+    }
+    .stat-num { font-size: 2.2rem; font-weight: 800; color: var(--accent); }
+    .stat-label { color: var(--gray); font-size: 0.85rem; margin-top: 0.3rem; }
+
+    /* How it works */
+    section { max-width: 900px; margin: 0 auto; padding: 3rem 2rem; }
+    h2 {
+      font-size: 1.8rem; font-weight: 700; margin-bottom: 2rem;
+      background: linear-gradient(90deg, #fff, #a78bfa);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .steps { display: grid; gap: 1rem; }
+    .step {
+      display: flex; gap: 1rem; align-items: flex-start;
+      background: #111; border: 1px solid var(--border); border-radius: 10px; padding: 1.2rem;
+    }
+    .step-num {
+      background: var(--accent); color: #fff; width: 28px; height: 28px;
+      border-radius: 50%; display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 0.8rem; flex-shrink: 0;
+    }
+    .step-content h3 { font-size: 1rem; margin-bottom: 0.3rem; }
+    .step-content p  { color: var(--gray); font-size: 0.85rem; }
+
+    /* Code tabs */
+    .code-tabs { display: flex; gap: 0.5rem; margin-bottom: 0.5rem; }
+    .tab {
+      background: var(--border); color: var(--gray); border: none;
+      padding: 0.3rem 0.8rem; border-radius: 6px 6px 0 0; cursor: pointer;
+      font-size: 0.8rem; transition: background 0.2s;
+    }
+    .tab.active { background: #1f2937; color: var(--white); }
+    .code-block {
+      background: #111; border: 1px solid var(--border); border-radius: 0 8px 8px 8px;
+      padding: 1.2rem; font-family: monospace; font-size: 0.83rem; overflow-x: auto;
+    }
+    .kw { color: #a78bfa; }
+    .str { color: #34d399; }
+    .cm { color: #4b5563; }
+    .fn { color: #fbbf24; }
+
+    /* Packages grid */
+    .pkgs { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem; }
+    .pkg {
+      background: #111; border: 1px solid var(--border); border-radius: 10px;
+      padding: 1rem 1.2rem;
+    }
+    .pkg-name { font-family: monospace; color: var(--accent); font-size: 0.9rem; }
+    .pkg-desc { color: var(--gray); font-size: 0.8rem; margin-top: 0.3rem; }
+    .pkg-install {
+      background: var(--black); border: 1px solid var(--border); border-radius: 4px;
+      padding: 0.3rem 0.6rem; font-family: monospace; font-size: 0.75rem;
+      color: #a78bfa; margin-top: 0.5rem; display: block;
+    }
+
+    /* Security */
+    .security-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;
+    }
+    .threat {
+      background: #111; border: 1px solid var(--border); border-radius: 10px;
+      padding: 1rem;
+    }
+    .threat h4 { font-size: 0.85rem; color: #f87171; margin-bottom: 0.3rem; }
+    .threat p  { font-size: 0.8rem; color: var(--gray); }
+
+    /* Footer */
+    footer {
+      border-top: 1px solid var(--border); padding: 2rem;
+      text-align: center; color: var(--gray); font-size: 0.85rem;
+    }
+    footer a { color: var(--accent); text-decoration: none; }
+  </style>
+</head>
+<body>
+
+<!-- Navigation -->
+<nav>
+  <div class="logo">🔐 Soulprint</div>
+  <div class="nav-links">
+    <a href="#how-it-works">How it works</a>
+    <a href="#install">Install</a>
+    <a href="#packages">Packages</a>
+    <a href="https://github.com/manuelariasfz/soulprint/blob/main/specs/SIP-v0.1.md">Protocol Spec</a>
+  </div>
+  <a href="https://github.com/manuelariasfz/soulprint" class="github-btn">
+    ⭐ Star on GitHub
+  </a>
+</nav>
+
+<!-- Hero -->
+<main>
+<section class="hero">
+  <div class="hero-badge">🚀 Open Protocol — SIP v0.1</div>
+  <h1>Every bot has a soul behind it.</h1>
+  <p class="tagline">
+    Soulprint proves there's a verified human behind any AI agent —
+    using Zero-Knowledge Proofs. No servers. No paid APIs. No PII stored.
+  </p>
+  <div class="cta-row">
+    <a href="#install" class="btn-primary">Get Started →</a>
+    <a href="https://github.com/manuelariasfz/soulprint" class="btn-secondary">View on GitHub</a>
+    <a href="https://github.com/manuelariasfz/soulprint/blob/main/specs/SIP-v0.1.md" class="btn-secondary">Read Spec</a>
+  </div>
+
+  <!-- Terminal Demo -->
+  <div class="terminal">
+    <div class="terminal-bar">
+      <div class="dot dot-r"></div>
+      <div class="dot dot-y"></div>
+      <div class="dot dot-g"></div>
+    </div>
+    <div class="line-cmd">$ npx soulprint verify-me --selfie me.jpg --document cedula.jpg</div>
+    <br>
+    <div class="line-info">🔐 Soulprint — Local Identity Verification</div>
+    <div class="line-info">📂 Your data NEVER leaves this device</div>
+    <br>
+    <div class="line-ok">  ✅ Image validation</div>
+    <div class="line-ok">  ✅ Document OCR (cedula MRZ)</div>
+    <div class="line-ok">  ✅ Face match (InsightFace)</div>
+    <div class="line-ok">  ✅ Nullifier derivation</div>
+    <div class="line-ok">  ✅ ZK proof generated (564ms)</div>
+    <div class="line-ok">  ✅ SPT token issued</div>
+    <br>
+    <div class="line-val">  DID:         did:key:z6Mk…</div>
+    <div class="line-val">  Trust Score: 45/100  (KYCFull)</div>
+    <div class="line-val">  ZK Proof:    ✅ included</div>
+    <div class="line-val">  Token:       ~/.soulprint/token.spt</div>
+  </div>
+</section>
+
+<!-- Stats -->
+<div class="stats">
+  <div class="stat">
+    <div class="stat-num">564ms</div>
+    <div class="stat-label">ZK Proof generation</div>
+  </div>
+  <div class="stat">
+    <div class="stat-num">25ms</div>
+    <div class="stat-label">Proof verification (offline)</div>
+  </div>
+  <div class="stat">
+    <div class="stat-num">844</div>
+    <div class="stat-label">Circuit constraints (Groth16)</div>
+  </div>
+  <div class="stat">
+    <div class="stat-num">0</div>
+    <div class="stat-label">Bytes of PII stored anywhere</div>
+  </div>
+</div>
+
+<!-- How it works -->
+<section id="how-it-works">
+  <h2>How it works</h2>
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-content">
+        <h3>Local Verification (on your device)</h3>
+        <p>Tesseract OCR reads your cedula. InsightFace matches your face to the document photo. Both models load on-demand and are deleted from memory immediately after. <strong>Zero persistent ML processes.</strong></p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-content">
+        <h3>ZK Proof Generation</h3>
+        <p>A Circom circuit generates a Groth16 proof: <em>"I know a cedula + birthdate + face key such that Poseidon(cedula, birthdate, face_key) = nullifier"</em> — without revealing any of those values. 564ms locally.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-content">
+        <h3>Soulprint Token (SPT) Issued</h3>
+        <p>An Ed25519-signed JWT is created with your trust score, credentials, and ZK proof. No name, no cedula number, no biometric data. Stored in <code>~/.soulprint/token.spt</code>. Valid 24 hours.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">4</div>
+      <div class="step-content">
+        <h3>Services Verify in &lt;50ms, Offline</h3>
+        <p>Any MCP server or REST API can verify your token with 3 lines of code. No internet needed. The ZK proof mathematically proves your identity without any central authority.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Install / Integration -->
+<section id="install">
+  <h2>Integration (3 lines)</h2>
+
+  <div class="code-tabs">
+    <button class="tab active" onclick="showTab('mcp')">MCP Server</button>
+    <button class="tab" onclick="showTab('express')">Express / REST</button>
+    <button class="tab" onclick="showTab('fastify')">Fastify</button>
+    <button class="tab" onclick="showTab('manual')">Manual</button>
+  </div>
+
+  <div id="tab-mcp" class="code-block">
+    <span class="kw">import</span> { McpServer } <span class="kw">from</span> <span class="str">"@modelcontextprotocol/sdk/server/mcp.js"</span>;<br>
+    <span class="kw">import</span> { soulprint } <span class="kw">from</span> <span class="str">"soulprint-mcp"</span>;<br><br>
+    <span class="kw">const</span> server = <span class="kw">new</span> <span class="fn">McpServer</span>({ name: <span class="str">"my-server"</span>, version: <span class="str">"1.0"</span> });<br>
+    server.<span class="fn">use</span>(<span class="fn">soulprint</span>({ minScore: <span class="str">60</span> }));<br><br>
+    <span class="cm">// Access the verified identity in any tool</span><br>
+    server.<span class="fn">tool</span>(<span class="str">"my-tool"</span>, <span class="kw">async</span> (args, ctx) => {<br>
+    &nbsp;&nbsp;<span class="kw">const</span> { nullifier, score } = ctx._soulprint;<br>
+    &nbsp;&nbsp;<span class="cm">// nullifier = unique per human, no PII</span><br>
+    });
+  </div>
+
+  <div id="tab-express" class="code-block" style="display:none">
+    <span class="kw">import</span> express <span class="kw">from</span> <span class="str">"express"</span>;<br>
+    <span class="kw">import</span> { soulprint } <span class="kw">from</span> <span class="str">"soulprint-express"</span>;<br><br>
+    <span class="kw">const</span> app = <span class="fn">express</span>();<br>
+    app.<span class="fn">use</span>(<span class="fn">soulprint</span>({ minScore: <span class="str">40</span> }));<br><br>
+    app.<span class="fn">get</span>(<span class="str">"/me"</span>, (req, res) => {<br>
+    &nbsp;&nbsp;res.<span class="fn">json</span>({ nullifier: req.soulprint.nullifier });<br>
+    &nbsp;&nbsp;<span class="cm">// No PII — just the nullifier</span><br>
+    });
+  </div>
+
+  <div id="tab-fastify" class="code-block" style="display:none">
+    <span class="kw">import</span> Fastify <span class="kw">from</span> <span class="str">"fastify"</span>;<br>
+    <span class="kw">import</span> { soulprintFastify } <span class="kw">from</span> <span class="str">"soulprint-express"</span>;<br><br>
+    <span class="kw">const</span> fastify = <span class="fn">Fastify</span>();<br>
+    <span class="kw">await</span> fastify.<span class="fn">register</span>(soulprintFastify, { minScore: <span class="str">60</span> });<br><br>
+    fastify.<span class="fn">get</span>(<span class="str">"/me"</span>, <span class="kw">async</span> (req) => ({<br>
+    &nbsp;&nbsp;nullifier: req.soulprint?.nullifier<br>
+    }));
+  </div>
+
+  <div id="tab-manual" class="code-block" style="display:none">
+    <span class="kw">import</span> { decodeToken } <span class="kw">from</span> <span class="str">"soulprint-core"</span>;<br><br>
+    <span class="cm">// Token in HTTP header: X-Soulprint: &lt;SPT&gt;</span><br>
+    <span class="kw">const</span> token = <span class="fn">decodeToken</span>(req.headers[<span class="str">"x-soulprint"</span>]);<br><br>
+    <span class="kw">if</span> (!token || token.score &lt; <span class="str">60</span>) {<br>
+    &nbsp;&nbsp;<span class="kw">return</span> res.<span class="fn">status</span>(<span class="str">403</span>).<span class="fn">json</span>({ error: <span class="str">"Unverified bot"</span> });<br>
+    }<br><br>
+    <span class="cm">// token.nullifier = unique ID per human (no PII)</span><br>
+    <span class="cm">// token.score     = 0-100 trust score</span>
+  </div>
+</section>
+
+<!-- Packages -->
+<section id="packages">
+  <h2>Packages</h2>
+  <div class="pkgs">
+    <div class="pkg">
+      <div class="pkg-name">soulprint</div>
+      <div class="pkg-desc">CLI — verify identity, run validator node</div>
+      <code class="pkg-install">npx soulprint verify-me</code>
+    </div>
+    <div class="pkg">
+      <div class="pkg-name">soulprint-mcp</div>
+      <div class="pkg-desc">MCP server middleware (3 lines)</div>
+      <code class="pkg-install">npm i soulprint-mcp</code>
+    </div>
+    <div class="pkg">
+      <div class="pkg-name">soulprint-express</div>
+      <div class="pkg-desc">Express &amp; Fastify middleware</div>
+      <code class="pkg-install">npm i soulprint-express</code>
+    </div>
+    <div class="pkg">
+      <div class="pkg-name">soulprint-core</div>
+      <div class="pkg-desc">DID, SPT tokens, Ed25519 signatures</div>
+      <code class="pkg-install">npm i soulprint-core</code>
+    </div>
+    <div class="pkg">
+      <div class="pkg-name">soulprint-zkp</div>
+      <div class="pkg-desc">ZK proofs — Circom + snarkjs</div>
+      <code class="pkg-install">npm i soulprint-zkp</code>
+    </div>
+    <div class="pkg">
+      <div class="pkg-name">soulprint-network</div>
+      <div class="pkg-desc">Validator node HTTP server</div>
+      <code class="pkg-install">npm i soulprint-network</code>
+    </div>
+    <div class="pkg">
+      <div class="pkg-name">soulprint-verify</div>
+      <div class="pkg-desc">Local OCR + face match (on-demand)</div>
+      <code class="pkg-install">npm i soulprint-verify</code>
+    </div>
+  </div>
+</section>
+
+<!-- Security -->
+<section>
+  <h2>Security Model</h2>
+  <div class="security-grid">
+    <div class="threat">
+      <h4>🔴 Sybil Attack</h4>
+      <p>Blocked. Nullifier = biometric + document. Same face = same nullifier. Can't register twice.</p>
+    </div>
+    <div class="threat">
+      <h4>🔴 Token Forgery</h4>
+      <p>Blocked. Ed25519 signature bound to DID keypair. Any modification invalidates the signature.</p>
+    </div>
+    <div class="threat">
+      <h4>🔴 Replay Attack</h4>
+      <p>Blocked. 24h expiry + context_tag binds proof to a specific service, preventing cross-service replay.</p>
+    </div>
+    <div class="threat">
+      <h4>🔴 Privacy Leak</h4>
+      <p>Blocked. ZK proof reveals zero data. Verifier only sees: trust score, country, credential types.</p>
+    </div>
+    <div class="threat">
+      <h4>🔴 Central Bottleneck</h4>
+      <p>Blocked. No central server. Verification happens offline, locally, in &lt;50ms.</p>
+    </div>
+    <div class="threat">
+      <h4>🔴 DID Substitution</h4>
+      <p>Blocked. Ed25519 signature is over the full payload including the DID. Can't swap it.</p>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section style="text-align:center; padding: 4rem 2rem;">
+  <h2 style="font-size: 2rem; margin-bottom: 1rem;">Ready to verify your bots?</h2>
+  <p style="color: var(--gray); margin-bottom: 2rem;">
+    Open source, MIT licensed. No sign-up, no API keys, no servers.
+  </p>
+  <div class="cta-row">
+    <a href="https://github.com/manuelariasfz/soulprint" class="btn-primary">View on GitHub →</a>
+    <a href="https://www.npmjs.com/package/soulprint" class="btn-secondary">npm: soulprint</a>
+    <a href="https://github.com/manuelariasfz/soulprint/blob/main/specs/SIP-v0.1.md" class="btn-secondary">Protocol Spec (SIP-v0.1)</a>
+  </div>
+</section>
+</main>
+
+<footer>
+  <p>
+    Soulprint is open source (<a href="https://github.com/manuelariasfz/soulprint/blob/main/LICENSE">MIT</a>) •
+    <a href="https://github.com/manuelariasfz/soulprint">GitHub</a> •
+    <a href="https://www.npmjs.com/package/soulprint">npm</a> •
+    <a href="https://github.com/manuelariasfz/soulprint/blob/main/specs/SIP-v0.1.md">Protocol Spec</a>
+  </p>
+  <p style="margin-top:0.5rem; font-size:0.75rem;">
+    Built for the age of AI agents. Every bot has a soul behind it.
+  </p>
+</footer>
+
+<script>
+function showTab(name) {
+  ['mcp','express','fastify','manual'].forEach(t => {
+    document.getElementById('tab-'+t).style.display = t === name ? 'block' : 'none';
+    document.querySelectorAll('.tab').forEach((btn, i) => {
+      btn.classList.toggle('active', ['mcp','express','fastify','manual'][i] === name);
+    });
+  });
+}
+</script>
+</body>
+</html>

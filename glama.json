@@ -1,0 +1,17 @@
+{
+  "name": "Soulprint",
+  "description": "Decentralized KYC identity protocol for AI agents. Proves there's a verified human behind any bot using Zero-Knowledge Proofs. No servers, no PII stored.",
+  "vendor": "Soulprint",
+  "sourceUrl": "https://github.com/manuelariasfz/soulprint",
+  "homepage": "https://manuelariasfz.github.io/soulprint/",
+  "license": "MIT",
+  "runtime": "node",
+  "categories": ["identity", "security", "privacy", "authentication"],
+  "tags": ["zero-knowledge", "kyc", "decentralized-identity", "anti-sybil", "ai-agents", "mcp"],
+  "install": {
+    "npm": {
+      "package": "soulprint-mcp",
+      "command": ["node", "dist/server.js"]
+    }
+  }
+}

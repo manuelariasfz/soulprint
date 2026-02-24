@@ -1,0 +1,39 @@
+name: Soulprint
+description: >
+  Decentralized KYC identity protocol for AI agents.
+  Proves there's a verified human behind any bot using Zero-Knowledge Proofs (Circom + snarkjs).
+  No servers, no companies, no PII stored. Open protocol — anyone can run a validator node.
+version: 0.1.0
+license: MIT
+homepage: https://manuelariasfz.github.io/soulprint/
+repository: https://github.com/manuelariasfz/soulprint
+author:
+  name: Felipe Arias
+  github: manuelariasfz
+categories:
+  - identity
+  - security
+  - privacy
+  - authentication
+  - ai-agents
+tags:
+  - zero-knowledge-proof
+  - kyc
+  - decentralized-identity
+  - anti-sybil
+  - did
+  - mcp
+  - colombia
+  - circom
+  - snarkjs
+startCommand:
+  type: stdio
+  command: npx
+  args: ["-y", "soulprint-network"]
+  configSchema:
+    type: object
+    properties:
+      port:
+        type: number
+        description: Validator node port (default 4888)
+        default: 4888
