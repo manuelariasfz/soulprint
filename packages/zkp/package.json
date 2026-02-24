@@ -1,0 +1,23 @@
+{
+  "name": "@soulprint/zkp",
+  "version": "0.1.0",
+  "description": "Soulprint ZK proofs — Circom circuits + snarkjs prover",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "build:circuits": "node scripts/compile-circuits.js",
+    "test": "node --test dist/**/*.test.js"
+  },
+  "dependencies": {
+    "@soulprint/core": "workspace:*",
+    "circomlibjs": "^0.1.7",
+    "ffjavascript": "^0.3.0",
+    "snarkjs": "^0.7.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "circomlib": "^2.0.5",
+    "typescript": "^5.4.0"
+  }
+}

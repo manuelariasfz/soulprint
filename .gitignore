@@ -2,3 +2,14 @@ node_modules/
 dist/
 *.env
 .env*
+
+# ZK artifacts grandes — se generan localmente con: pnpm build:circuits
+packages/zkp/keys/*.ptau
+packages/zkp/keys/*_0000.zkey
+packages/zkp/build/
+
+# Imágenes de prueba — datos sensibles
+*.jpg
+*.jpeg
+*.png
+spa.traineddata
