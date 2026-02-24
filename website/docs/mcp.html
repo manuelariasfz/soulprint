@@ -160,7 +160,7 @@ app.use(soulprintMiddleware({ minScore: <span class="keyword">40</span> }));
 <span class="comment">// Or apply per-route</span>
 app.post(
   <span class="string">"/apply-job"</span>,
-  soulprintMiddleware({ minScore: <span class="keyword">95</span>, requireDocument: <span class="keyword">true</span> }),
+  soulprintMiddleware({ minScore: <span class="keyword">40</span> }),
   (req, res) => {
     <span class="keyword">const</span> { did, score, country } = req.soulprint;
     res.json({ accepted: <span class="keyword">true</span>, applicant: did });
