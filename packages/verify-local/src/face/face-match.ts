@@ -11,7 +11,7 @@ export interface FaceMatchResult {
 }
 
 export interface FaceMatchOptions {
-  minSimilarity?: number;   // default 0.65
+  minSimilarity?: number;   // default 0.35 (doc-vs-selfie); use 0.65 for selfie-vs-selfie
   checkLiveness?: boolean;  // default false (requiere más proceso)
   verbose?:       boolean;
 }
@@ -36,7 +36,7 @@ export async function matchFaceWithDocument(
   documentPhoto:  string,
   opts: FaceMatchOptions = {}
 ): Promise<FaceMatchResult> {
-  const minSim = opts.minSimilarity ?? 0.65;
+  const minSim = opts.minSimilarity ?? 0.35;
 
   // Verificar que existe el script Python
   if (!existsSync(PYTHON_SCRIPT)) {

@@ -285,7 +285,7 @@ def main():
     parser = argparse.ArgumentParser(description="Soulprint face match")
     parser.add_argument("--selfie",   required=True,  help="Path selfie del usuario")
     parser.add_argument("--document", required=True,  help="Path foto del documento")
-    parser.add_argument("--min-sim",  type=float, default=0.65, help="Similitud mínima")
+    parser.add_argument("--min-sim",  type=float, default=0.35, help="Similitud mínima")
     parser.add_argument("--liveness", action="store_true", help="Verificar liveness")
     args = parser.parse_args()
 
