@@ -702,6 +702,86 @@ describe("Validator Node — Anti-Sybil Logic", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// MULTI-COUNTRY REGISTRY
+// ─────────────────────────────────────────────────────────────────────────────
+describe("Multi-Country Registry", () => {
+  const { getVerifier, listCountries, countryCount } =
+    require("../packages/verify-local/dist/document/registry.js");
+
+  test("Registry tiene 7 países registrados", () => {
+    assertEq(countryCount(), 7, "Debe haber 7 países");
+  });
+
+  test("listCountries() retorna metadata correcta", () => {
+    const countries = listCountries();
+    assertEq(countries.length, 7);
+    const co = countries.find(c => c.code === "CO");
+    assert(co !== undefined, "Colombia debe estar");
+    assert(co.hasMRZ, "CO debe tener MRZ");
+    assert(co.documentTypes.includes("cedula"), "CO debe tener cedula");
+  });
+
+  test("getVerifier() retorna verifier correcto por código ISO", () => {
+    const co = getVerifier("CO");
+    assert(co !== undefined,         "CO debe existir");
+    assertEq(co.countryCode, "CO");
+    assertEq(co.countryName, "Colombia");
+
+    const mx = getVerifier("MX");
+    assertEq(mx.countryCode, "MX");
+    assertEq(mx.countryName, "Mexico");
+  });
+
+  test("getVerifier() es case-insensitive", () => {
+    assert(getVerifier("co") !== undefined, "'co' minúscula debe funcionar");
+    assert(getVerifier("Co") !== undefined, "'Co' mixto debe funcionar");
+  });
+
+  test("getVerifier() retorna undefined para país inexistente", () => {
+    assert(getVerifier("XX") === undefined, "País no registrado debe ser undefined");
+    assert(getVerifier("") === undefined,   "Cadena vacía debe ser undefined");
+  });
+
+  test("CO — valida cédulas correctamente", () => {
+    const co = getVerifier("CO");
+    assert(co.validate("1020461234").valid,  "Cédula válida debe pasar");
+    assert(!co.validate("123").valid,        "Número muy corto debe fallar");
+    assert(!co.validate("abc").valid,        "Letras deben fallar");
+  });
+
+  test("CL — dígito verificador RUN correcto (mod 11)", () => {
+    const cl = getVerifier("CL");
+    // RUN con check digit correcto: el resultado de runCheckDigit("12345678") se usa
+    const r1 = cl.validate("12345678-9"); // check digit incorrecto
+    assert(!r1.valid, "RUN con check digit incorrecto debe fallar");
+  });
+
+  test("BR — CPF con dígitos verificadores válidos", () => {
+    const br = getVerifier("BR");
+    // CPF de prueba válido (dominio público para tests)
+    const r1 = br.validate("529.982.247-25"); // CPF válido conocido
+    assert(r1.valid, "CPF válido debe pasar");
+
+    const r2 = br.validate("111.111.111-11"); // todos iguales, inválido
+    assert(!r2.valid, "CPF con todos dígitos iguales debe fallar");
+  });
+
+  test("VE — cédula venezolana V/E", () => {
+    const ve = getVerifier("VE");
+    assert(ve.validate("V-12345678").valid,  "V-XXXXXXXX debe ser válida");
+    assert(ve.validate("E-98765432").valid,  "E-XXXXXXXX debe ser válida");
+    assert(!ve.validate("12345678").valid,   "Sin prefijo V/E debe fallar");
+  });
+
+  test("PE — DNI peruano 8 dígitos", () => {
+    const pe = getVerifier("PE");
+    assert(pe.validate("12345678").valid,   "8 dígitos debe ser válido");
+    assert(!pe.validate("1234567").valid,   "7 dígitos debe fallar");
+    assert(!pe.validate("123456789").valid, "9 dígitos debe fallar");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // RESULTADO FINAL
 // ─────────────────────────────────────────────────────────────────────────────
 async function run() {

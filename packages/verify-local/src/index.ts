@@ -175,4 +175,8 @@ function calcScore(credentials: CredentialType[]): number {
 
 export { ocrCedula, quickValidateImage }   from "./document/ocr.js";
 export { matchFaceWithDocument }            from "./face/face-match.js";
-export { validateCedulaNumber, parseCedulaOCR } from "./document/cedula-validator.js";
+export { validateCedulaNumber, parseCedulaOCR, parseMRZ, icaoCheckDigit, verifyCheckDigit } from "./document/cedula-validator.js";
+
+// Multi-country registry
+export { getVerifier, listCountries, detectVerifier, countryCount } from "./document/registry.js";
+export type { CountryVerifier, DocumentResult, NumberValidation, ImageValidation } from "./document/verifier.interface.js";

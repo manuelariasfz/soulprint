@@ -1,6 +1,6 @@
 {
   "name": "soulprint-mcp",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Soulprint MCP middleware \u2014 protect any MCP server with 3 lines: server.use(soulprint({ minScore: 60 }))",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
