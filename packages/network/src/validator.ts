@@ -7,6 +7,7 @@ import {
   decodeToken, sign, createToken,
   TOKEN_LIFETIME_SECONDS, TOKEN_RENEW_PREEMPTIVE_SECS,
   TOKEN_RENEW_GRACE_SECS, TOKEN_RENEW_COOLDOWN_SECS,
+  verifyDPoP, NonceStore,
   BotAttestation, BotReputation,
   verifyAttestation, computeReputation, defaultReputation,
   PROTOCOL, PROTOCOL_HASH, isProtocolCompatible, isProtocolHashCompatible, computeTotalScoreWithFloor,
@@ -47,11 +48,11 @@ const AUDIT_DB     = join(NODE_DIR, "audit.json");
 const VERSION      = "0.2.0";
 
 const MAX_BODY_BYTES       = 64 * 1024;
-// ── Protocol constants (inamovibles — no cambiar directamente aquí) ───────────
+// ── Protocol constants (inamovibles - no cambiar directamente aquí) ───────────
 const RATE_LIMIT_MS        = PROTOCOL.RATE_LIMIT_WINDOW_MS;
 const RATE_LIMIT_MAX       = PROTOCOL.RATE_LIMIT_MAX;
 const CLOCK_SKEW_MAX       = PROTOCOL.CLOCK_SKEW_MAX_SECONDS;
-const MIN_ATTESTER_SCORE   = PROTOCOL.MIN_ATTESTER_SCORE;  // 65 — inamovible
+const MIN_ATTESTER_SCORE   = PROTOCOL.MIN_ATTESTER_SCORE;  // 65 - inamovible
 const ATT_MAX_AGE_SECONDS  = PROTOCOL.ATT_MAX_AGE_SECONDS;
 const GOSSIP_TIMEOUT_MS    = PROTOCOL.GOSSIP_TIMEOUT_MS;
 
@@ -71,7 +72,7 @@ export function setP2PNode(node: SoulprintP2PNode): void {
   onAttestationReceived(node, (att, fromPeer) => {
     // Validar firma antes de aplicar
     if (!verifyAttestation(att)) {
-      console.warn(`[p2p] Attestation inválida de peer ${fromPeer.slice(0, 16)}... — descartada`);
+      console.warn(`[p2p] Attestation inválida de peer ${fromPeer.slice(0, 16)}... - descartada`);
       return;
     }
     // Anti-replay ya está dentro de applyAttestation()
@@ -84,6 +85,9 @@ export function setP2PNode(node: SoulprintP2PNode): void {
 
 // ── Rate limiter ──────────────────────────────────────────────────────────────
 const rateLimits = new Map<string, { count: number; resetAt: number }>();
+
+// ── DPoP Nonce Store — anti-replay para request signing ──────────────────────
+const dpopNonces = new NonceStore();
 function checkRateLimit(ip: string): boolean {
   const now   = Date.now();
   const entry = rateLimits.get(ip);
@@ -102,15 +106,15 @@ function saveNullifiers() { writeFileSync(NULLIFIER_DB, JSON.stringify(nullifier
 // ── Reputation store ──────────────────────────────────────────────────────────
 /**
  * Per-DID reputation: score (0-20) + attestation history.
- * Persisted to disk — survives node restarts.
+ * Persisted to disk - survives node restarts.
  */
 interface ReputeEntry {
   score:               number;
   base:                number;          // score base calculado desde attestations
   attestations:        BotAttestation[];
   last_updated:        number;
-  identityScore:       number;          // sub-score de identidad — para calcular floor
-  hasDocumentVerified: boolean;         // si tiene DocumentVerified — activa VERIFIED_SCORE_FLOOR
+  identityScore:       number;          // sub-score de identidad - para calcular floor
+  hasDocumentVerified: boolean;         // si tiene DocumentVerified - activa VERIFIED_SCORE_FLOOR
 }
 let repStore: Record<string, ReputeEntry> = {};
 
@@ -140,7 +144,7 @@ function getReputation(did: string): BotReputation {
  *
  * PROTOCOL ENFORCEMENT:
  * - Si el bot tiene DocumentVerified, su score total nunca puede caer por
- *   debajo de PROTOCOL.VERIFIED_SCORE_FLOOR (52) — inamovible.
+ *   debajo de PROTOCOL.VERIFIED_SCORE_FLOOR (52) - inamovible.
  * - Anti-replay: la misma attestation (mismo issuer + timestamp + context)
  *   no se puede aplicar dos veces.
  *
@@ -208,8 +212,8 @@ function savePeers() { writeFileSync(PEERS_DB, JSON.stringify(peers, null, 2)); 
  * Gossip: propaga la attestation a la red.
  *
  * Estrategia:
- *  1. P2P GossipSub (Phase 5) — si el nodo libp2p está activo
- *  2. HTTP fire-and-forget (Phase 3) — fallback para nodos legacy sin libp2p
+ *  1. P2P GossipSub (Phase 5) - si el nodo libp2p está activo
+ *  2. HTTP fire-and-forget (Phase 3) - fallback para nodos legacy sin libp2p
  *
  * Ambos canales son fire-and-forget: no bloquean la respuesta al cliente.
  */
@@ -246,7 +250,7 @@ async function gossipAttestation(att: BotAttestation, excludeUrl?: string) {
       },
       body:    JSON.stringify(encrypted),
       signal:  AbortSignal.timeout(GOSSIP_TIMEOUT_MS),
-    }).catch(() => { /* peer unreachable — ignore */ });
+    }).catch(() => { /* peer unreachable - ignore */ });
   }
 }
 
@@ -325,7 +329,7 @@ function handleInfo(res: ServerResponse, nodeKeypair: SoulprintKeypair) {
 function handleProtocol(res: ServerResponse) {
   json(res, 200, {
     protocol_version:      PROTOCOL.VERSION,
-    // ── Protocol Hash — IDENTIDAD DE LA RED ────────────────────────────────
+    // ── Protocol Hash - IDENTIDAD DE LA RED ────────────────────────────────
     // Cualquier nodo con un hash diferente es rechazado automáticamente.
     // Si PROTOCOL fue modificado (aunque sea un valor), este hash cambia.
     protocol_hash:         PROTOCOL_HASH,
@@ -410,9 +414,9 @@ async function handleAttest(req: IncomingMessage, res: ServerResponse, ip: strin
   if (from_peer) {
     const peerHash = req.headers["x-protocol-hash"] as string | undefined;
     if (peerHash && !isProtocolHashCompatible(peerHash)) {
-      console.warn(`[protocol] Gossip rechazado de ${ip} — hash incompatible: ${peerHash?.slice(0,16)}...`);
+      console.warn(`[protocol] Gossip rechazado de ${ip} - hash incompatible: ${peerHash?.slice(0,16)}...`);
       return json(res, 409, {
-        error:       "Protocol mismatch — gossip rejected",
+        error:       "Protocol mismatch - gossip rejected",
         our_hash:    PROTOCOL_HASH,
         their_hash:  peerHash,
       });
@@ -439,7 +443,7 @@ async function handleAttest(req: IncomingMessage, res: ServerResponse, ip: strin
   // Si viene de un peer (gossip), confiar en que ya fue validado
   // Si viene del exterior, exigir service_spt
   if (!from_peer) {
-    if (!service_spt) return json(res, 401, { error: "Missing service_spt — only verified services can attest" });
+    if (!service_spt) return json(res, 401, { error: "Missing service_spt - only verified services can attest" });
 
     const serviceTok = decodeToken(service_spt);
     if (!serviceTok) return json(res, 401, { error: "Invalid or expired service_spt" });
@@ -474,7 +478,7 @@ async function handleAttest(req: IncomingMessage, res: ServerResponse, ip: strin
     const session: SessionContext = {
       did:       att.target_did,
       startTime: (att.timestamp - 60) * 1000,  // estimar inicio de sesión 60s antes
-      events:    [],  // no tenemos eventos individuales aquí — se evalúa en withTracking()
+      events:    [],  // no tenemos eventos individuales aquí - se evalúa en withTracking()
       issuerDid: att.issuer_did,
     };
 
@@ -569,13 +573,13 @@ async function handlePeerRegister(req: IncomingMessage, res: ServerResponse) {
   if (!url || typeof url !== "string") return json(res, 400, { error: "Missing field: url" });
   if (!/^https?:\/\//.test(url))       return json(res, 400, { error: "url must start with http:// or https://" });
 
-  // ── Protocol Hash Enforcement — INAMOVIBLE POR LA RED ────────────────────
+  // ── Protocol Hash Enforcement - INAMOVIBLE POR LA RED ────────────────────
   // Si el peer envía un hash, DEBE coincidir con el nuestro.
   // Si no envía hash → se acepta (nodos legacy / primeras versiones).
   // En versiones futuras, el hash será OBLIGATORIO.
   if (protocol_hash && !isProtocolHashCompatible(protocol_hash)) {
     return json(res, 409, {
-      error:                  "Protocol mismatch — node rejected",
+      error:                  "Protocol mismatch - node rejected",
       reason:                 "The peer is running with different protocol constants. This breaks network consensus.",
       our_hash:               PROTOCOL_HASH,
       their_hash:             protocol_hash,
@@ -710,7 +714,7 @@ async function handleTokenRenew(
 
   // Decodificar sin verificar expiración (queremos ver el DID aunque esté expirado)
   const token = decodeToken(body.spt);
-  if (!token) return json(res, 401, { error: "Invalid SPT — cannot decode" });
+  if (!token) return json(res, 401, { error: "Invalid SPT - cannot decode" });
 
   const nowSecs = Math.floor(Date.now() / 1000);
   const secsUntilExpiry = token.expires - nowSecs;
@@ -730,13 +734,13 @@ async function handleTokenRenew(
   if (!inPreemptWindow && !inGraceWindow) {
     if (!isExpired) {
       return json(res, 400, {
-        error:        "Token válido — no necesita renovación aún",
+        error:        "Token válido - no necesita renovación aún",
         expires_in:   secsUntilExpiry,
         renew_after:  secsUntilExpiry - RENEW_PREEMPT,
       });
     }
     return json(res, 401, {
-      error:        "Token expirado hace más de 7 días — requiere re-verificación completa",
+      error:        "Token expirado hace más de 7 días - requiere re-verificación completa",
       expired_ago:  secsAfterExpiry,
       max_grace:    RENEW_GRACE,
     });
@@ -747,7 +751,7 @@ async function handleTokenRenew(
   const lastRenew    = (repStore[token.did] as any)?._lastRenew ?? 0;
   if (nowSecs - lastRenew < RENEW_COOLDOWN) {
     return json(res, 429, {
-      error:      "Renovación muy frecuente — espera 60s entre renovaciones",
+      error:      "Renovación muy frecuente - espera 60s entre renovaciones",
       retry_in:   RENEW_COOLDOWN - (nowSecs - lastRenew),
     });
   }
@@ -757,7 +761,7 @@ async function handleTokenRenew(
   const nullifierEntry = nullifierPair?.[1];
   if (!nullifierEntry) {
     return json(res, 403, {
-      error: "DID no registrado en este nodo — requiere re-verificación",
+      error: "DID no registrado en este nodo - requiere re-verificación",
       did:   token.did,
     });
   }
@@ -776,7 +780,7 @@ async function handleTokenRenew(
 
   if (currentRep < scoreFloor) {
     return json(res, 403, {
-      error:       "Score por debajo del floor — renovación denegada",
+      error:       "Score por debajo del floor - renovación denegada",
       score:       currentRep,
       floor:       scoreFloor,
       hint:        "El bot necesita más attestations positivas",
@@ -1006,7 +1010,7 @@ export function startValidatorNode(port: number = PORT) {
     }
 
     // ── Consensus P2P endpoints (sin EVM, sin gas) ─────────────────────────
-    // GET /consensus/state-info — handshake para state-sync
+    // GET /consensus/state-info - handshake para state-sync
     if (cleanUrl === "/consensus/state-info" && req.method === "GET") {
       return json(res, 200, {
         nullifierCount:   nullifierConsensus.getAllNullifiers().length,
@@ -1017,7 +1021,7 @@ export function startValidatorNode(port: number = PORT) {
       });
     }
 
-    // GET /consensus/state?page=N&limit=500&since=TS — bulk state sync
+    // GET /consensus/state?page=N&limit=500&since=TS - bulk state sync
     if (cleanUrl === "/consensus/state" && req.method === "GET") {
       const params       = new URLSearchParams(url.split("?")[1] ?? "");
       const page         = parseInt(params.get("page") ?? "0");
@@ -1037,7 +1041,7 @@ export function startValidatorNode(port: number = PORT) {
       });
     }
 
-    // POST /consensus/message — recibir mensaje de consenso cifrado
+    // POST /consensus/message - recibir mensaje de consenso cifrado
     if (cleanUrl === "/consensus/message" && req.method === "POST") {
       const body = await readBody(req);
       if (!body?.payload) return json(res, 400, { error: "Missing payload" });
@@ -1058,7 +1062,7 @@ export function startValidatorNode(port: number = PORT) {
 
     // ── Governance endpoints ──────────────────────────────────────────────────
 
-    // GET /governance — estado del hash aprobado + propuestas activas
+    // GET /governance - estado del hash aprobado + propuestas activas
     if (cleanUrl === "/governance" && req.method === "GET") {
       const [currentHash, active, history] = await Promise.all([
         client?.getCurrentApprovedHash()  ?? null,
@@ -1074,14 +1078,14 @@ export function startValidatorNode(port: number = PORT) {
       });
     }
 
-    // GET /governance/proposals — lista de propuestas activas
+    // GET /governance/proposals - lista de propuestas activas
     if (cleanUrl === "/governance/proposals" && req.method === "GET") {
       if (!client?.isConnected) return json(res, 503, { error: "Blockchain not connected" });
       const proposals = await client.getActiveProposals();
       return json(res, 200, { proposals, total: proposals.length });
     }
 
-    // GET /governance/proposal/:id — detalle de una propuesta
+    // GET /governance/proposal/:id - detalle de una propuesta
     if (cleanUrl.match(/^\/governance\/proposal\/\d+$/) && req.method === "GET") {
       if (!client?.isConnected) return json(res, 503, { error: "Blockchain not connected" });
       const proposalId = parseInt(cleanUrl.split("/").pop()!);
@@ -1091,7 +1095,7 @@ export function startValidatorNode(port: number = PORT) {
       return json(res, 200, { ...proposal, timelockRemainingSeconds: remaining });
     }
 
-    // POST /governance/propose — proponer upgrade del PROTOCOL_HASH
+    // POST /governance/propose - proponer upgrade del PROTOCOL_HASH
     // Body: { did, newHash, rationale }
     if (cleanUrl === "/governance/propose" && req.method === "POST") {
       if (!client?.isConnected) return json(res, 503, { error: "Blockchain not connected" });
@@ -1104,11 +1108,11 @@ export function startValidatorNode(port: number = PORT) {
         newHash:   body.newHash,
         rationale: body.rationale,
       });
-      if (!result) return json(res, 500, { error: "Proposal failed — check validator logs" });
+      if (!result) return json(res, 500, { error: "Proposal failed - check validator logs" });
       return json(res, 201, result);
     }
 
-    // POST /governance/vote — votar en una propuesta
+    // POST /governance/vote - votar en una propuesta
     // Body: { proposalId, did, approve }
     if (cleanUrl === "/governance/vote" && req.method === "POST") {
       if (!client?.isConnected) return json(res, 503, { error: "Blockchain not connected" });
@@ -1121,18 +1125,18 @@ export function startValidatorNode(port: number = PORT) {
         did:        body.did,
         approve:    Boolean(body.approve),
       });
-      if (!txHash) return json(res, 500, { error: "Vote failed — check validator logs" });
+      if (!txHash) return json(res, 500, { error: "Vote failed - check validator logs" });
       return json(res, 200, { txHash, proposalId: body.proposalId, approve: body.approve });
     }
 
-    // POST /governance/execute — ejecutar propuesta post-timelock
+    // POST /governance/execute - ejecutar propuesta post-timelock
     // Body: { proposalId }
     if (cleanUrl === "/governance/execute" && req.method === "POST") {
       if (!client?.isConnected) return json(res, 503, { error: "Blockchain not connected" });
       const body = await readBody(req);
       if (body?.proposalId === undefined) return json(res, 400, { error: "Required: proposalId" });
       const txHash = await client.executeProposal(Number(body.proposalId));
-      if (!txHash) return json(res, 500, { error: "Execute failed — timelock not expired or proposal not approved" });
+      if (!txHash) return json(res, 500, { error: "Execute failed - timelock not expired or proposal not approved" });
       return json(res, 200, { txHash, proposalId: body.proposalId, executed: true });
     }
 
@@ -1166,7 +1170,7 @@ export function startValidatorNode(port: number = PORT) {
     console.log(`   POST /credentials/phone/verify`);
     console.log(`   GET  /credentials/github/start   → GitHub OAuth (native fetch)`);
     console.log(`   GET  /credentials/github/callback`);
-    console.log(`\n   Anti-farming: ON — max +1/day, pattern detection, cooldowns`);
+    console.log(`\n   Anti-farming: ON - max +1/day, pattern detection, cooldowns`);
     console.log(`\n   Consensus P2P (sin EVM, sin gas):`);
     console.log(`   GET  /consensus/state-info    handshake para state-sync`);
     console.log(`   GET  /consensus/state         bulk state sync paginado`);

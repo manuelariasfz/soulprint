@@ -317,3 +317,8 @@ export { needsRenewal, renewToken, autoRenew } from "./token-renewal.js";
 export type { RenewResult, RenewOptions } from "./token-renewal.js";
 
 export { TOKEN_LIFETIME_SECONDS, TOKEN_RENEW_PREEMPTIVE_SECS, TOKEN_RENEW_GRACE_SECS, TOKEN_RENEW_COOLDOWN_SECS } from "./protocol-constants.js";
+
+// ── DPoP — Demonstrating Proof of Possession ─────────────────────────────────
+export { signDPoP, serializeDPoP, deserializeDPoP, verifyDPoP, NonceStore } from "./dpop.js";
+export type { DPoPPayload, DPoPProof, DPoPVerifyResult } from "./dpop.js";
+export { DPOP_MAX_AGE_SECS, DPOP_NONCE_TTL_MS } from "./dpop.js";

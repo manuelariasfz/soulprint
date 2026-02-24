@@ -2,6 +2,7 @@ import {
   decodeToken, SoulprintToken, TrustLevel, CredentialType,
   PROTOCOL, clampMinScore, withRetry,
   needsRenewal, autoRenew,
+  verifyDPoP, NonceStore,
 } from "soulprint-core";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -31,6 +32,13 @@ export interface SoulprintOptions {
   validatorUrl?: string;
 
   /**
+   * Requiere DPoP (Demonstrating Proof of Possession).
+   * Cuando true, el cliente debe incluir X-Soulprint-Proof firmado con su llave privada.
+   * Previene el uso de SPTs robados. Default: false (backward compatible).
+   */
+  requireDPoP?: boolean;
+
+  /**
    * URL del nodo para auto-renew del SPT.
    * Si es el mismo que validatorUrl, usa el mismo nodo.
    * Si no se provee, usa validatorUrl como fallback.
@@ -43,6 +51,9 @@ export interface SoulprintOptions {
   /** Called when a request is rejected */
   onRejected?: (reason: string) => void;
 }
+
+// Nonce store compartido para la instancia del servidor MCP
+const _mcpNonceStore = new NonceStore();
 
 const LEVEL_SCORES: Record<TrustLevel, number> = {
   Unverified:     0,
@@ -202,6 +213,31 @@ export function requireSoulprint(opts: SoulprintOptions = {}) {
           }
         }
       }
+    }
+
+    // ── DPoP verification ────────────────────────────────────────────────
+    const dpopHeader = context?.meta?.["x-soulprint-proof"]
+      ?? context?.request?.headers?.["x-soulprint-proof"];
+    if (dpopHeader && spt) {
+      const sptDecoded = decodeToken(spt);
+      if (sptDecoded) {
+        const dpopResult = verifyDPoP(
+          dpopHeader, spt, "POST",
+          context?.request?.url ?? "mcp://localhost",
+          _mcpNonceStore,
+          sptDecoded.did,
+        );
+        if (!dpopResult.valid) {
+          throw new MCPError(`DPoP inválido: ${dpopResult.reason}`, "UNAUTHORIZED", {
+            hint: "Firma el request con tu llave privada (signDPoP de soulprint-core)",
+          });
+        }
+      }
+    } else if (opts.requireDPoP) {
+      throw new MCPError(
+        "DPoP requerido: incluye X-Soulprint-Proof firmado con tu llave privada",
+        "UNAUTHORIZED",
+      );
     }
 
     const result = verifySPT(spt, { ...opts, minScore: effectiveMinScore });

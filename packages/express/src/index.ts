@@ -1,7 +1,10 @@
-import { decodeToken, SoulprintToken, TrustLevel, CredentialType, needsRenewal, autoRenew } from "soulprint-core";
+import { decodeToken, SoulprintToken, TrustLevel, CredentialType, needsRenewal, autoRenew, verifyDPoP, NonceStore } from "soulprint-core";
 import { verifySPT, SoulprintOptions } from "./verify.js";
 
 export { verifySPT, SoulprintOptions };
+
+// Nonce store compartido para toda la instancia del middleware
+const _nonceStore = new NonceStore();
 
 // ── Express Middleware ────────────────────────────────────────────────────────
 
@@ -40,6 +43,14 @@ export { verifySPT, SoulprintOptions };
 
 export interface SoulprintMiddlewareOptions extends SoulprintOptions {
   /**
+   * Requiere DPoP (Demonstrating Proof of Possession) en el header X-Soulprint-Proof.
+   * Cuando true, el cliente debe firmar cada request con su llave privada.
+   * Esto previene el uso de SPTs robados — sin la llave privada no se puede firmar.
+   * Default: false (backward compatible). Recomendado: true para endpoints sensibles.
+   */
+  requireDPoP?: boolean;
+
+  /**
    * URL del nodo validador para auto-renew.
    * Si no se provee, el auto-renew está desactivado.
    * Ejemplo: "https://validator.soulprint.digital"
@@ -71,6 +82,35 @@ export function soulprint(opts: SoulprintMiddlewareOptions = {}) {
           res.setHeader("X-Soulprint-Renew-Method",  "auto");
         }
       }
+    }
+
+    // ── DPoP verification (Demonstrating Proof of Possession) ────────────────
+    const dpopHeader = req.headers?.["x-soulprint-proof"];
+    if (dpopHeader && activeSpt) {
+      const sptDecoded = decodeToken(activeSpt);
+      if (sptDecoded) {
+        const dpopResult = verifyDPoP(
+          dpopHeader,
+          activeSpt,
+          req.method ?? "GET",
+          req.protocol + "://" + (req.headers?.host ?? "localhost") + req.originalUrl,
+          _nonceStore,
+          sptDecoded.did,
+        );
+        if (!dpopResult.valid) {
+          return res.status(401).json({
+            error:   "dpop_invalid",
+            message: dpopResult.reason,
+            docs:    "https://github.com/manuelariasfz/soulprint#dpop",
+          });
+        }
+      }
+    } else if (opts.requireDPoP) {
+      return res.status(401).json({
+        error:   "dpop_required",
+        message: "Este endpoint requiere DPoP (X-Soulprint-Proof header). Firma el request con tu llave privada.",
+        docs:    "https://github.com/manuelariasfz/soulprint#dpop",
+      });
     }
 
     const result = verifySPT(activeSpt, opts);
