@@ -1,6 +1,6 @@
 {
   "name": "soulprint-verify",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Soulprint local verification \u2014 on-demand cedula OCR + InsightFace match, zero persistent memory",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
