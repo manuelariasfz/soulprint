@@ -291,7 +291,10 @@ export function calculateLevel(credentials: CredentialType[]): TrustLevel {
 // ── Protocol Constants (re-export) ────────────────────────────────────────────
 export {
   PROTOCOL,
+  PROTOCOL_HASH,
+  computeProtocolHash,
   isProtocolCompatible,
+  isProtocolHashCompatible,
   clampMinScore,
   computeTotalScoreWithFloor,
   withRetry,

@@ -7,7 +7,7 @@ import {
   decodeToken, sign,
   BotAttestation, BotReputation,
   verifyAttestation, computeReputation, defaultReputation,
-  PROTOCOL, isProtocolCompatible, computeTotalScoreWithFloor,
+  PROTOCOL, PROTOCOL_HASH, isProtocolCompatible, isProtocolHashCompatible, computeTotalScoreWithFloor,
   checkFarming, recordApprovedGain, recordFarmingStrike,
   loadAuditStore, exportAuditStore,
   SessionContext, FARMING_RULES,
@@ -208,12 +208,17 @@ async function gossipAttestation(att: BotAttestation, excludeUrl?: string) {
   }
 
   // ── Canal 2: HTTP gossip (fallback para nodos legacy) ─────────────────────
+  // Incluye X-Protocol-Hash para que el peer receptor valide compatibilidad.
   const targets = peers.filter(p => p !== excludeUrl);
   for (const peerUrl of targets) {
     fetch(`${peerUrl}/reputation/attest`, {
       method:  "POST",
-      headers: { "Content-Type": "application/json", "X-Gossip": "1" },
-      body:    JSON.stringify({ attestation: att }),
+      headers: {
+        "Content-Type":    "application/json",
+        "X-Gossip":        "1",
+        "X-Protocol-Hash": PROTOCOL_HASH,   // ← el receptor valida esto
+      },
+      body:    JSON.stringify({ attestation: att, from_peer: true }),
       signal:  AbortSignal.timeout(GOSSIP_TIMEOUT_MS),
     }).catch(() => { /* peer unreachable — ignore */ });
   }
@@ -265,11 +270,12 @@ function handleInfo(res: ServerResponse, nodeKeypair: SoulprintKeypair) {
     node_did:            nodeKeypair.did,
     version:             VERSION,
     protocol:            PROTOCOL.VERSION,
+    protocol_hash:       PROTOCOL_HASH,   // ← cualquier modificación cambia este hash
     total_verified:      Object.keys(nullifiers).length,
     total_reputation:    Object.keys(repStore).length,
     known_peers:         peers.length,
     supported_countries: ["CO"],
-    capabilities:        ["zk-verify", "anti-sybil", "co-sign", "bot-reputation", "p2p-gossipsub"],
+    capabilities:        ["zk-verify", "anti-sybil", "co-sign", "bot-reputation", "p2p-gossipsub", "credential-validators", "anti-farming"],
     rate_limit:          `${PROTOCOL.RATE_LIMIT_MAX} req/min per IP`,
     // P2P stats (Phase 5)
     p2p: p2pStats ? {
@@ -292,19 +298,33 @@ function handleInfo(res: ServerResponse, nodeKeypair: SoulprintKeypair) {
  */
 function handleProtocol(res: ServerResponse) {
   json(res, 200, {
-    protocol_version:    PROTOCOL.VERSION,
-    score_floor:         PROTOCOL.SCORE_FLOOR,
-    verified_score_floor: PROTOCOL.VERIFIED_SCORE_FLOOR,
-    min_attester_score:  PROTOCOL.MIN_ATTESTER_SCORE,
-    identity_max:        PROTOCOL.IDENTITY_MAX,
-    reputation_max:      PROTOCOL.REPUTATION_MAX,
-    max_score:           PROTOCOL.MAX_SCORE,
-    default_reputation:  PROTOCOL.DEFAULT_REPUTATION,
-    verify_retry_max:    PROTOCOL.VERIFY_RETRY_MAX,
-    verify_retry_base_ms: PROTOCOL.VERIFY_RETRY_BASE_MS,
-    verify_retry_max_ms: PROTOCOL.VERIFY_RETRY_MAX_MS,
-    att_max_age_seconds: PROTOCOL.ATT_MAX_AGE_SECONDS,
-    immutable:           true,  // todas estas constantes son inamovibles por diseño
+    protocol_version:      PROTOCOL.VERSION,
+    // ── Protocol Hash — IDENTIDAD DE LA RED ────────────────────────────────
+    // Cualquier nodo con un hash diferente es rechazado automáticamente.
+    // Si PROTOCOL fue modificado (aunque sea un valor), este hash cambia.
+    protocol_hash:         PROTOCOL_HASH,
+    // ── Score limits ────────────────────────────────────────────────────────
+    score_floor:           PROTOCOL.SCORE_FLOOR,
+    verified_score_floor:  PROTOCOL.VERIFIED_SCORE_FLOOR,
+    min_attester_score:    PROTOCOL.MIN_ATTESTER_SCORE,
+    identity_max:          PROTOCOL.IDENTITY_MAX,
+    reputation_max:        PROTOCOL.REPUTATION_MAX,
+    max_score:             PROTOCOL.MAX_SCORE,
+    default_reputation:    PROTOCOL.DEFAULT_REPUTATION,
+    // ── Biometric thresholds ────────────────────────────────────────────────
+    face_sim_doc_selfie:    PROTOCOL.FACE_SIM_DOC_SELFIE,
+    face_sim_selfie_selfie: PROTOCOL.FACE_SIM_SELFIE_SELFIE,
+    face_key_dims:          PROTOCOL.FACE_KEY_DIMS,
+    face_key_precision:     PROTOCOL.FACE_KEY_PRECISION,
+    // ── Retry / timing ──────────────────────────────────────────────────────
+    verify_retry_max:      PROTOCOL.VERIFY_RETRY_MAX,
+    verify_retry_base_ms:  PROTOCOL.VERIFY_RETRY_BASE_MS,
+    verify_retry_max_ms:   PROTOCOL.VERIFY_RETRY_MAX_MS,
+    att_max_age_seconds:   PROTOCOL.ATT_MAX_AGE_SECONDS,
+    // ── Enforcement notice ──────────────────────────────────────────────────
+    immutable:             true,
+    enforcement:           "p2p-hash",   // ← la red rechaza nodos con hash diferente
+    note:                  "Nodes with a different protocol_hash are rejected by the network. Modifying any constant changes the hash and isolates the node.",
   });
 }
 
@@ -341,6 +361,22 @@ async function handleAttest(req: IncomingMessage, res: ServerResponse, ip: strin
 
   const { attestation, service_spt, from_peer } = body ?? {};
   if (!attestation) return json(res, 400, { error: "Missing field: attestation" });
+
+  // ── Protocol Hash Enforcement (gossip desde peers) ────────────────────────
+  // Si la attestation viene de un peer (X-Gossip: 1), validamos que el peer
+  // opera con las mismas constantes de protocolo.
+  // Un nodo con constantes modificadas no puede inyectar attestations en la red.
+  if (from_peer) {
+    const peerHash = req.headers["x-protocol-hash"] as string | undefined;
+    if (peerHash && !isProtocolHashCompatible(peerHash)) {
+      console.warn(`[protocol] Gossip rechazado de ${ip} — hash incompatible: ${peerHash?.slice(0,16)}...`);
+      return json(res, 409, {
+        error:       "Protocol mismatch — gossip rejected",
+        our_hash:    PROTOCOL_HASH,
+        their_hash:  peerHash,
+      });
+    }
+  }
 
   const att: BotAttestation = attestation;
 
@@ -441,14 +477,30 @@ async function handlePeerRegister(req: IncomingMessage, res: ServerResponse) {
   let body: any;
   try { body = await readBody(req); } catch (e: any) { return json(res, 400, { error: e.message }); }
 
-  const { url } = body ?? {};
+  const { url, protocol_hash } = body ?? {};
   if (!url || typeof url !== "string") return json(res, 400, { error: "Missing field: url" });
   if (!/^https?:\/\//.test(url))       return json(res, 400, { error: "url must start with http:// or https://" });
-  if (peers.includes(url))             return json(res, 200, { ok: true, peers: peers.length, msg: "Already registered" });
+
+  // ── Protocol Hash Enforcement — INAMOVIBLE POR LA RED ────────────────────
+  // Si el peer envía un hash, DEBE coincidir con el nuestro.
+  // Si no envía hash → se acepta (nodos legacy / primeras versiones).
+  // En versiones futuras, el hash será OBLIGATORIO.
+  if (protocol_hash && !isProtocolHashCompatible(protocol_hash)) {
+    return json(res, 409, {
+      error:                  "Protocol mismatch — node rejected",
+      reason:                 "The peer is running with different protocol constants. This breaks network consensus.",
+      our_hash:               PROTOCOL_HASH,
+      their_hash:             protocol_hash,
+      our_version:            PROTOCOL.VERSION,
+      resolution:             "Update soulprint-network to the latest version, or join a compatible network.",
+    });
+  }
+
+  if (peers.includes(url)) return json(res, 200, { ok: true, peers: peers.length, msg: "Already registered" });
 
   peers.push(url);
   savePeers();
-  json(res, 200, { ok: true, peers: peers.length });
+  json(res, 200, { ok: true, peers: peers.length, protocol_hash: PROTOCOL_HASH });
 }
 
 // ── GET /peers ─────────────────────────────────────────────────────────────────
@@ -591,6 +643,8 @@ export function startValidatorNode(port: number = PORT) {
     console.log(`\n🌐 Soulprint Validator Node v${VERSION}`);
     console.log(`   Node DID:     ${nodeKeypair.did}`);
     console.log(`   Listening:    http://0.0.0.0:${port}`);
+    console.log(`   Protocol:     ${PROTOCOL.VERSION} | hash: ${PROTOCOL_HASH.slice(0,16)}...`);
+    console.log(`   ⚠️  Hash mismatch with peers → connection rejected (P2P enforcement)`);
     console.log(`   Nullifiers:   ${Object.keys(nullifiers).length}`);
     console.log(`   Reputations:  ${Object.keys(repStore).length}`);
     console.log(`   Known peers:  ${peers.length}`);

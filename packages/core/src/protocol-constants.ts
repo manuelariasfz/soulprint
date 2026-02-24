@@ -7,7 +7,18 @@
  * y una actualización de versión de protocolo.
  *
  * Object.freeze() garantiza que no se modifiquen en runtime.
+ *
+ * ─── POR QUÉ Object.freeze() NO ES SUFICIENTE ─────────────────────────────
+ * Un AI o developer con acceso al código podría modificar los valores y
+ * correr su propio nodo con constantes distintas, rompiendo el protocolo.
+ *
+ * LA VERDADERA INMUTABILIDAD LA DA LA RED P2P:
+ * Cada nodo computa PROTOCOL_HASH al arrancar.
+ * Si el hash no coincide con los peers → el nodo es rechazado de la red.
+ * No hay forma de participar en la red con constantes modificadas.
  */
+
+import { createHash } from "node:crypto";
 
 export const PROTOCOL = Object.freeze({
   // ── Versión del protocolo ──────────────────────────────────────────────────
@@ -123,6 +134,48 @@ export const PROTOCOL = Object.freeze({
 
 // Tipo derivado — útil para tipado estricto en TypeScript
 export type ProtocolConstants = typeof PROTOCOL;
+
+// ── Protocol Hash ─────────────────────────────────────────────────────────────
+
+/**
+ * Hash canónico de todos los valores de PROTOCOL.
+ * Se computa deterministicamente: JSON con claves ordenadas → SHA-256.
+ *
+ * PROPÓSITO:
+ * Este hash es la "identidad del protocolo" en la red P2P.
+ * Dos nodos solo pueden interactuar si sus PROTOCOL_HASH coinciden.
+ * Si alguien modifica cualquier constante (aunque sea 0.35 → 0.34),
+ * el hash cambia y el nodo queda aislado de toda la red.
+ *
+ * NO SE PUEDE FALSIFICAR: el hash se re-computa de los valores reales
+ * en memoria. Si PROTOCOL fue modificado antes de importar este módulo,
+ * el hash resultante no coincidirá con el de ningún nodo honesto.
+ *
+ * Valor esperado para SIP v0.1 con biometric constants:
+ * dfe1ccca1270ec86f93308dc4b981bab1d6bd74bdcc334059f4380b407ca07ca
+ */
+export function computeProtocolHash(): string {
+  const canonical = JSON.stringify(
+    Object.fromEntries(
+      Object.entries(PROTOCOL).sort(([a], [b]) => a.localeCompare(b))
+    )
+  );
+  return createHash("sha256").update(canonical).digest("hex");
+}
+
+/**
+ * Hash oficial del protocolo SIP v0.1 (biometric constants incluidas).
+ * Cualquier nodo con un hash diferente no es compatible con esta red.
+ */
+export const PROTOCOL_HASH = computeProtocolHash();
+
+/**
+ * Verifica que el hash de protocolo de un peer remoto coincide con el local.
+ * Retorna true si el peer es compatible, false si debe ser rechazado.
+ */
+export function isProtocolHashCompatible(remoteHash: string): boolean {
+  return remoteHash === PROTOCOL_HASH;
+}
 
 /**
  * Verifica que este nodo es compatible con la versión de protocolo recibida.
