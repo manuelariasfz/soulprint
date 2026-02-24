@@ -1,4 +1,4 @@
-# Soulprint — Architecture (v0.3.1)
+# Soulprint — Architecture (v0.3.2)
 
 > Cada diagrama C4 tiene **dos formatos**:
 > - 🖼️ **Mermaid** — se renderiza visualmente en GitHub (para humanos)
@@ -808,6 +808,39 @@ Issuer firma ATTEST{issuerDid, targetDid, +1/-1, context, ts, sig}
     │   └── applyAttest() → actualiza reputación + persiste
     │
     └── estado eventualmente consistente en toda la red
+```
+
+
+### Blockchain Backup — P2P primario + async anchor
+
+```
+Flowchain Backup (BlockchainAnchor — blockchain-anchor.ts):
+
+  BFT P2P COMMIT (0s, $0)
+      │
+      ├──▶ Respuesta al usuario (inmediata)
+      │
+      └──▶ async (no bloquea)
+             BlockchainAnchor.anchorNullifier()
+             │
+             ├── blockchain conectado: tx Base Sepolia → ~5s, gratis testnet
+             ├── falla: retry x3 (0s → 2s → 8s backoff)
+             └── 3 fallos: blockchain-queue.json (flushea cada 60s)
+
+Contratos en Base Sepolia (chainId: 84532):
+  ProtocolConstants:  0x20EEeFe3e59e6c76065A3037375053e7A9c94529
+  SoulprintRegistry:  0xE6F804c3c90143721A938a20478a779F142254Fd
+  AttestationLedger:  0xD91595bbb8f649e4E3a14cF525cC83D098FEfE57
+  ValidatorRegistry:  0xE9418dBF769082363e784de006008b1597F5EeE9
+```
+
+**Activar backup:**
+```bash
+SOULPRINT_RPC_URL=https://sepolia.base.org \\
+SOULPRINT_PRIVATE_KEY=0x... \\
+SOULPRINT_NETWORK=base-sepolia \\
+npx soulprint node
+# log: [anchor] ✅ Blockchain backup enabled — Base Sepolia
 ```
 
 ### StateSyncManager — Sync al arrancar

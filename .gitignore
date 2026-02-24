@@ -17,5 +17,6 @@ packages/blockchain/cache/
 packages/blockchain/artifacts/
 packages/blockchain/typechain-types/
 packages/blockchain/deployments/hardhat.json
+# testnet deployment tracked in git
 packages/blockchain/.env
 packages/blockchain/node_modules/

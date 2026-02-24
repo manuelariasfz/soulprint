@@ -270,7 +270,7 @@ Threshold rationale: a completely different person scores < 0.15 with buffalo_sc
 ## Status
 
 
-## BFT P2P Consensus Extension (v0.3.1)
+## BFT P2P Consensus Extension (v0.3.2)
 
 Decentralized nullifier registration and attestation propagation without a blockchain.
 
@@ -329,9 +329,49 @@ Protocol hash verified in handshake — incompatible nodes rejected immediately.
 | ZK grounding | Each voter verifies the ZK proof locally (deterministic) |
 
 
+## Blockchain Backup Extension (v0.3.2)
+
+Async anchoring of P2P-committed data to EVM blockchain (Base Sepolia/mainnet).
+
+### Architecture
+
+```
+P2P BFT COMMIT (primary, ~2s, $0)
+    └──▶ BlockchainAnchor.anchorNullifier() [async, non-blocking]
+         ├── retry x3: 0s → 2s → 8s backoff
+         ├── success: tx hash logged
+         └── 3 fails → blockchain-queue.json (flushed every 60s)
+```
+
+### Deployed Contracts — Base Sepolia (chainId: 84532)
+
+| Contract | Address |
+|---|---|
+| ProtocolConstants | `0x20EEeFe3e59e6c76065A3037375053e7A9c94529` |
+| SoulprintRegistry | `0xE6F804c3c90143721A938a20478a779F142254Fd` |
+| AttestationLedger | `0xD91595bbb8f649e4E3a14cF525cC83D098FEfE57` |
+| ValidatorRegistry | `0xE9418dBF769082363e784de006008b1597F5EeE9` |
+| Groth16Verifier   | `0x21D65c437eC2C024339eA97e7739387Fbe854381` (mock) |
+
+### Configuration
+
+```bash
+SOULPRINT_RPC_URL=https://sepolia.base.org
+SOULPRINT_PRIVATE_KEY=0x<deployer_key>
+SOULPRINT_NETWORK=base-sepolia
+```
+
+### Fault tolerance
+
+- P2P-only mode if no blockchain config (no downtime)
+- Queue persists to disk on failure (blockchain-queue.json)
+- Flush retry every 60s on reconnection
+- `NullifierAlreadyUsed` on-chain → idempotent (not an error)
+
+
 ---
 
-**Draft — v0.3.1**. Phases 1–5 complete + anti-farming + credential validators + biometric PROTOCOL constants + BFT P2P consensus (sin blockchain).  
+**Draft — v0.3.2**. Phases 1–5 complete + anti-farming + credential validators + biometric PROTOCOL constants + BFT P2P consensus (sin blockchain).  
 Phase 6 (multi-country expansion) in progress.
 
 Feedback welcome: open an issue at https://github.com/manuelariasfz/soulprint/issues

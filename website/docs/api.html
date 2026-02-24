@@ -183,6 +183,22 @@
       <tr><td><code>GET /reputation/:did</code></td><td>200/min per IP</td><td>Read-only, cached</td></tr>
       <tr><td><code>GET /proof-hash/:hash</code></td><td>200/min per IP</td><td>Read-only, cached</td></tr>
     </table>
+
+    <h2>Blockchain Anchor</h2>
+    <h3>GET /anchor/stats</h3>
+    <p>Returns the status of the async blockchain backup.</p>
+    <pre><code>GET /anchor/stats
+
+Response:
+{
+  "nullifiersAnchored":  12,       <span class="comment">// total anchored to blockchain</span>
+  "attestsAnchored":     47,
+  "pendingNullifiers":   0,        <span class="comment">// in retry queue</span>
+  "pendingAttests":      0,
+  "blockchainConnected": true,     <span class="comment">// false = P2P-only mode</span>
+  "lastAnchorTs":        1740000000000
+}</code></pre>
+
   </main>
 </div>
 </body>

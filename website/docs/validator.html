@@ -135,6 +135,51 @@ GET /credentials/github/callback
       <tr><td>Fault tolerance</td><td>Quorum N/2+1 — tolerates up to N/2 malicious nodes</td></tr>
     </table>
 
+
+    <h2>Blockchain Backup <span style="font-size:0.7em;background:#f4a261;color:#fff;padding:2px 8px;border-radius:10px;margin-left:8px">v0.3.2</span></h2>
+    <p>Soulprint v0.3.2 adds <strong>async blockchain backup</strong> — P2P is primary, blockchain is permanent record. No downtime if blockchain is unavailable.</p>
+
+    <h3>Architecture</h3>
+    <pre><code><span class="comment"># P2P commits instantly (no gas, no wait)</span>
+BFT P2P: PROPOSE → VOTE → COMMIT  (~2s, $0)
+    └──▶ Response to user  ← immediate ✅
+    └──▶ async (non-blocking)
+         BlockchainAnchor → Base Sepolia
+         ├── OK: tx anchored (~5s, free testnet)
+         ├── fail: retry x3 (0s→2s→8s backoff)
+         └── 3 fails: blockchain-queue.json</code></pre>
+
+    <h3>Deployed Contracts — Base Sepolia</h3>
+    <table>
+      <tr><th>Contract</th><th>Address</th><th>Explorer</th></tr>
+      <tr><td><code>ProtocolConstants</code></td><td><code>0x20EEe...4529</code></td><td><a href="https://sepolia.basescan.org/address/0x20EEeFe3e59e6c76065A3037375053e7A9c94529" target="_blank">BaseScan ↗</a></td></tr>
+      <tr><td><code>SoulprintRegistry</code></td><td><code>0xE6F8...54Fd</code></td><td><a href="https://sepolia.basescan.org/address/0xE6F804c3c90143721A938a20478a779F142254Fd" target="_blank">BaseScan ↗</a></td></tr>
+      <tr><td><code>AttestationLedger</code></td><td><code>0xD915...fE57</code></td><td><a href="https://sepolia.basescan.org/address/0xD91595bbb8f649e4E3a14cF525cC83D098FEfE57" target="_blank">BaseScan ↗</a></td></tr>
+      <tr><td><code>ValidatorRegistry</code></td><td><code>0xE941...eE9</code></td><td><a href="https://sepolia.basescan.org/address/0xE9418dBF769082363e784de006008b1597F5EeE9" target="_blank">BaseScan ↗</a></td></tr>
+    </table>
+
+    <h3>Enable blockchain backup</h3>
+    <pre><code>SOULPRINT_RPC_URL=https://sepolia.base.org \
+SOULPRINT_PRIVATE_KEY=0x... \
+SOULPRINT_NETWORK=base-sepolia \
+npx soulprint node
+
+<span class="comment"># Node log will show:</span>
+<span class="comment"># [anchor] ✅ Blockchain backup enabled — Base Sepolia</span>
+<span class="comment"># [anchor] ✅ nullifier 0xaa... → blockchain tx 0x1234...</span></code></pre>
+
+    <h3>GET /anchor/stats</h3>
+    <pre><code>curl http://localhost:4888/anchor/stats
+
+{
+  "nullifiersAnchored":  12,
+  "attestsAnchored":     47,
+  "pendingNullifiers":   0,
+  "pendingAttests":      0,
+  "blockchainConnected": true,
+  "lastAnchorTs":        1740000000000
+}</code></pre>
+
     <h2>Configuration</h2>
     <h3>Environment Variables</h3>
     <table>
