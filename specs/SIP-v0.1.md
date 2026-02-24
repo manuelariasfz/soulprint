@@ -97,6 +97,63 @@ The trust registry is a JSON file maintained by the community:
 }
 ```
 
+## Bot Reputation Extension (v0.1.3)
+
+### Overview
+
+The reputation layer extends the trust score with a behavioral dimension:
+
+```
+Total Score (0–100) = Identity Score (0–80) + Bot Reputation (0–20)
+```
+
+### BotAttestation
+
+A signed statement from a verified service (score ≥ 60) about a bot's behavior:
+
+```typescript
+{
+  issuer_did:  string;   // service DID (must have score >= 60)
+  target_did:  string;   // bot DID being rated
+  value:       1 | -1;   // reward (+1) or penalty (-1)
+  context:     string;   // e.g. "spam-detected", "normal-usage"
+  timestamp:   number;   // unix seconds
+  sig:         string;   // Ed25519(payload, issuer_privateKey)
+}
+```
+
+### Reputation computation
+
+```
+score = clamp(base + sum(valid_attestations.value), 0, 20)
+```
+
+Where `valid_attestation` means: Ed25519 signature verified AND not a duplicate.
+
+### Validator endpoint
+
+```
+POST /reputation/attest
+body: { attestation: BotAttestation, service_spt: string }
+
+Guards:
+  service_spt.score >= 60
+  service_spt.did == attestation.issuer_did
+  verifyAttestation(attestation) === true
+  attestation age < 3600 seconds
+  not a duplicate (issuer_did, timestamp, context)
+
+Side effects:
+  store attestation locally
+  gossip to all known peers (X-Gossip: 1 header, no re-gossip)
+```
+
+### Anti-Sybil for reputation
+
+A low-reputation bot cannot recover by creating a new DID — the new DID starts at 10 (neutral), not at the old score. Services choosing to trust only bots with score ≥ X ensure new/unknown bots are excluded from sensitive operations.
+
+---
+
 ## Security Considerations
 
 1. **Privacy**: ZK proof reveals nothing about the human's identity
@@ -104,15 +161,20 @@ The trust registry is a JSON file maintained by the community:
 3. **Key loss**: KYC allows re-issuance if private key is lost
 4. **Revocation**: principal can revoke their agent DID at any time
 5. **Validator compromise**: threshold (3/5) prevents single-validator attacks
+6. **Reputation gaming**: only services with score ≥ 60 can issue attestations; max score clamped at 20
+7. **Attestation forgery**: Ed25519 sig bound to issuer_did; tampered attestations always fail verification
 
 ## Implementations
 
 - **Reference (TypeScript)**: https://github.com/manuelariasfz/soulprint
+- **First verified service**: https://github.com/manuelariasfz/mcp-colombia
 - **Circuit**: Groth16 over BN128, Circom 2.1.8
 - **Hash function**: Poseidon (ZK-friendly, 3 inputs)
+- **Architecture**: [ARCHITECTURE.md](../ARCHITECTURE.md)
 
 ## Status
 
-This is a **draft spec**. Breaking changes are expected before v1.0.
+**Draft — v0.1.3**. Phases 1–4 complete (local verify, ZK proofs, validator nodes, SDKs + bot reputation).  
+Phase 5 (libp2p P2P) and Phase 6 (multi-country expansion) in progress.
 
 Feedback welcome: open an issue at https://github.com/manuelariasfz/soulprint/issues
