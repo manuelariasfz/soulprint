@@ -8,8 +8,12 @@ import {
   BotAttestation, BotReputation,
   verifyAttestation, computeReputation, defaultReputation,
   PROTOCOL, isProtocolCompatible, computeTotalScoreWithFloor,
+  checkFarming, recordApprovedGain, recordFarmingStrike,
+  loadAuditStore, exportAuditStore,
+  SessionContext, FARMING_RULES,
 } from "soulprint-core";
 import { verifyProof, deserializeProof } from "soulprint-zkp";
+import { handleCredentialRoute } from "./credentials/index.js";
 import {
   publishAttestationP2P,
   onAttestationReceived,
@@ -24,6 +28,7 @@ const KEYPAIR_FILE = join(NODE_DIR, "node-identity.json");
 const NULLIFIER_DB = join(NODE_DIR, "nullifiers.json");
 const REPUTE_DB    = join(NODE_DIR, "reputation.json");
 const PEERS_DB     = join(NODE_DIR, "peers.json");
+const AUDIT_DB     = join(NODE_DIR, "audit.json");
 const VERSION      = "0.2.0";
 
 const MAX_BODY_BYTES       = 64 * 1024;
@@ -98,6 +103,12 @@ function loadReputation() {
   if (existsSync(REPUTE_DB)) try { repStore = JSON.parse(readFileSync(REPUTE_DB, "utf8")); } catch { repStore = {}; }
 }
 function saveReputation() { writeFileSync(REPUTE_DB, JSON.stringify(repStore, null, 2)); }
+
+// ── Audit store (anti-farming) ────────────────────────────────────────────────
+function loadAudit() {
+  if (existsSync(AUDIT_DB)) try { loadAuditStore(JSON.parse(readFileSync(AUDIT_DB, "utf8"))); } catch { /* empty */ }
+}
+function saveAudit() { writeFileSync(AUDIT_DB, JSON.stringify(exportAuditStore(), null, 2)); }
 
 /**
  * Obtiene la reputación de un DID.
@@ -373,18 +384,55 @@ async function handleAttest(req: IncomingMessage, res: ServerResponse, ip: strin
   }
 
   // ── Aplicar y persistir ───────────────────────────────────────────────────
-  const updatedRep = applyAttestation(att);
+
+  // ── ANTI-FARMING CHECK (solo para attestations positivas) ─────────────────
+  // Si detectamos farming, convertimos el +1 en -1 automáticamente.
+  // Las attestations negativas no se chequean (una penalización real no hace farming).
+  let finalAtt = att;
+  if (att.value === 1 && !from_peer) {
+    const existing = repStore[att.target_did];
+    const prevAtts = existing?.attestations ?? [];
+
+    // Reconstruir sesión desde el contexto de la attestation
+    const session: SessionContext = {
+      did:       att.target_did,
+      startTime: (att.timestamp - 60) * 1000,  // estimar inicio de sesión 60s antes
+      events:    [],  // no tenemos eventos individuales aquí — se evalúa en withTracking()
+      issuerDid: att.issuer_did,
+    };
+
+    const farmResult = checkFarming(session, prevAtts);
+    if (farmResult.isFarming) {
+      console.warn(
+        `[anti-farming] 🚫 Farming detectado para ${att.target_did.slice(0,20)}...`,
+        `\n  Razón: ${farmResult.reason}`,
+        `\n  Convirtiendo +1 → -1 automáticamente`
+      );
+      // Penalizar en lugar de recompensar
+      finalAtt = { ...att, value: -1, context: `farming-penalty:${att.context}` };
+      recordFarmingStrike(att.target_did);
+      saveAudit();
+    } else {
+      // Registrar ganancia aprobada para el tracking de velocidad
+      recordApprovedGain(att.target_did);
+      saveAudit();
+    }
+  }
+
+  const updatedRep = applyAttestation(finalAtt);
 
   // ── Gossip a los peers (async, fire-and-forget) ───────────────────────────
   if (!from_peer) {
-    gossipAttestation(att, undefined);
+    gossipAttestation(finalAtt, undefined);
   }
 
   json(res, 200, {
     ok:          true,
-    target_did:  att.target_did,
+    target_did:  finalAtt.target_did,
     reputation:  updatedRep,
     gossiped_to: from_peer ? 0 : peers.length,
+    farming_detected: finalAtt.value !== att.value,
+    ...(finalAtt.value !== att.value ? { farming_reason: finalAtt.context } : {}),
   });
 }
 
@@ -496,27 +544,45 @@ export function startValidatorNode(port: number = PORT) {
   loadNullifiers();
   loadReputation();
   loadPeers();
+  loadAudit();
   const nodeKeypair = loadOrCreateNodeKeypair();
+
+  // ── Credential context (para el router de credenciales) ───────────────────
+  const credentialCtx = {
+    nodeKeypair,
+    signAttestation: (att: Omit<BotAttestation, "sig">) => {
+      const sig = sign(att, nodeKeypair.privateKey);
+      return { ...att, sig } as BotAttestation;
+    },
+    gossip: (att: BotAttestation) => gossipAttestation(att, undefined),
+  };
 
   const server = createServer(async (req, res) => {
     const ip  = getIP(req);
-    const url = req.url?.split("?")[0] ?? "/";
+    const url = req.url ?? "/";
+    const cleanUrl = url.split("?")[0];
 
     res.setHeader("Access-Control-Allow-Origin",  "*");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type");
     if (req.method === "OPTIONS") { res.writeHead(204); res.end(); return; }
 
-    if (url === "/info"                 && req.method === "GET")  return handleInfo(res, nodeKeypair);
-    if (url === "/protocol"             && req.method === "GET")  return handleProtocol(res);
-    if (url === "/verify"               && req.method === "POST") return handleVerify(req, res, nodeKeypair, ip);
-    if (url === "/reputation/attest"    && req.method === "POST") return handleAttest(req, res, ip);
-    if (url === "/peers/register"       && req.method === "POST") return handlePeerRegister(req, res);
-    if (url === "/peers"                && req.method === "GET")  return handleGetPeers(res);
-    if (url.startsWith("/reputation/")  && req.method === "GET")
-      return handleGetReputation(res, decodeURIComponent(url.replace("/reputation/", "")));
-    if (url.startsWith("/nullifier/")   && req.method === "GET")
-      return handleNullifierCheck(res, decodeURIComponent(url.replace("/nullifier/", "")));
+    // ── Credential routes (email, phone, github) ───────────────────────────
+    if (cleanUrl.startsWith("/credentials/")) {
+      const handled = await handleCredentialRoute(req, res, url, credentialCtx);
+      if (handled) return;
+    }
+
+    if (cleanUrl === "/info"                 && req.method === "GET")  return handleInfo(res, nodeKeypair);
+    if (cleanUrl === "/protocol"             && req.method === "GET")  return handleProtocol(res);
+    if (cleanUrl === "/verify"               && req.method === "POST") return handleVerify(req, res, nodeKeypair, ip);
+    if (cleanUrl === "/reputation/attest"    && req.method === "POST") return handleAttest(req, res, ip);
+    if (cleanUrl === "/peers/register"       && req.method === "POST") return handlePeerRegister(req, res);
+    if (cleanUrl === "/peers"                && req.method === "GET")  return handleGetPeers(res);
+    if (cleanUrl.startsWith("/reputation/")  && req.method === "GET")
+      return handleGetReputation(res, decodeURIComponent(cleanUrl.replace("/reputation/", "")));
+    if (cleanUrl.startsWith("/nullifier/")   && req.method === "GET")
+      return handleNullifierCheck(res, decodeURIComponent(cleanUrl.replace("/nullifier/", "")));
 
     json(res, 404, { error: "Not found" });
   });
@@ -528,14 +594,21 @@ export function startValidatorNode(port: number = PORT) {
     console.log(`   Nullifiers:   ${Object.keys(nullifiers).length}`);
     console.log(`   Reputations:  ${Object.keys(repStore).length}`);
     console.log(`   Known peers:  ${peers.length}`);
-    console.log(`\n   POST /verify              verify ZK proof + co-sign`);
+    console.log(`\n   Core endpoints:`);
+    console.log(`   POST /verify              verify ZK proof + co-sign`);
     console.log(`   GET  /info                node info`);
+    console.log(`   GET  /protocol            protocol constants (immutable)`);
     console.log(`   GET  /nullifier/:n        anti-sybil check`);
-    console.log(`   POST /reputation/attest   issue +1/-1 attestation`);
+    console.log(`   POST /reputation/attest   issue attestation (anti-farming ON)`);
     console.log(`   GET  /reputation/:did     get bot reputation`);
-    console.log(`   POST /peers/register      join P2P network`);
-    console.log(`   GET  /peers               list known peers`);
-    console.log(`\n   Anyone can run a Soulprint node. More nodes = more security.\n`);
+    console.log(`\n   Credential validators (open source, no API keys needed):`);
+    console.log(`   POST /credentials/email/start    → email OTP (nodemailer)`);
+    console.log(`   POST /credentials/email/verify`);
+    console.log(`   POST /credentials/phone/start    → TOTP device proof (otpauth)`);
+    console.log(`   POST /credentials/phone/verify`);
+    console.log(`   GET  /credentials/github/start   → GitHub OAuth (native fetch)`);
+    console.log(`   GET  /credentials/github/callback`);
+    console.log(`\n   Anti-farming: ON — max +1/day, pattern detection, cooldowns\n`);
   });
 
   return server;

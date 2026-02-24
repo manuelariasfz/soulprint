@@ -296,3 +296,15 @@ export {
   computeTotalScoreWithFloor,
   withRetry,
 } from "./protocol-constants.js";
+
+// ── Anti-Farming (re-export) ──────────────────────────────────────────────────
+export {
+  FARMING_RULES,
+  checkFarming,
+  recordApprovedGain,
+  recordFarmingStrike,
+  getOrCreateAudit,
+  loadAuditStore,
+  exportAuditStore,
+} from "./anti-farming.js";
+export type { SessionContext, FarmingCheckResult, DIDAuditEntry } from "./anti-farming.js";
