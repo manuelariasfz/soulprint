@@ -366,7 +366,65 @@ curl http://localhost:4888/info
   <span class="string">"proofHashesStored"</span>:  <span class="keyword">891</span>,
   <span class="string">"uptime"</span>:             <span class="keyword">86400</span>
 }</code></pre>
-  </main>
+  
+    <h2>Challenge-Response Peer Integrity <span style="font-size:0.7em;background:#e63946;color:#fff;padding:2px 8px;border-radius:10px;margin-left:8px">v0.3.7</span></h2>
+    <p>Soulprint v0.3.7 adds <strong>cryptographic peer verification</strong> — before accepting a new peer, the node challenges it to prove it's running unmodified ZK verification code.</p>
+
+    <h3>How it works</h3>
+    <p>The challenger sends two ZK proofs: one <strong>known-valid</strong> (the protocol's official test vector) and one <strong>freshly-mutated invalid proof</strong> (unique per challenge via random nonce). The peer must correctly return <code>true</code> for the valid proof and <code>false</code> for the invalid one — and sign the response with its node key.</p>
+
+    <table>
+      <tr><th>Attack</th><th>Detection</th></tr>
+      <tr><td>ZK always returns <code>true</code> (bypass)</td><td>Invalid proof test fails</td></tr>
+      <tr><td>ZK always returns <code>false</code></td><td>Valid proof test fails</td></tr>
+      <tr><td>Pre-computed / cached response</td><td>Random nonce makes each challenge unique</td></tr>
+      <tr><td>Node impersonation</td><td>Ed25519 signature tied to <code>node_did</code></td></tr>
+      <tr><td>Replay attack</td><td>30-second challenge TTL</td></tr>
+    </table>
+
+    <h3>Endpoint</h3>
+    <pre><code>POST /challenge
+Body: {
+  challenge_id: string,    // UUID nonce
+  nonce: string,           // 32-byte hex — makes invalid_proof unique
+  issued_at: number,       // unix timestamp (TTL: 30s)
+  valid_proof: ZKProof,    // protocol's official test vector
+  invalid_proof: ZKProof   // mutated proof — must fail verification
+}
+
+Response 200:
+{
+  challenge_id: string,
+  result_valid: true,      // valid proof verified correctly
+  result_invalid: false,   // invalid proof rejected correctly
+  verified_at: number,
+  node_did: string,
+  signature: string        // Ed25519(challenge_id + results + verified_at, node_key)
+}</code></pre>
+
+    <h3>Automatic peer verification</h3>
+    <p><code>POST /peers/register</code> now automatically runs <code>verifyPeerBehavior()</code> before accepting any peer. A peer with modified ZK code is rejected with <strong>HTTP 403</strong>.</p>
+
+    <h2>SPT Auto-Renewal <span style="font-size:0.7em;background:#4ade80;color:#000;padding:2px 8px;border-radius:10px;margin-left:8px">v0.3.6</span></h2>
+    <p>Tokens now renew automatically — no more downtime when a 24-hour SPT expires.</p>
+    <table>
+      <tr><th>Scenario</th><th>Window</th><th>Action</th></tr>
+      <tr><td>Token valid, &lt; 1h remaining</td><td>Pre-emptive</td><td>Auto-renew</td></tr>
+      <tr><td>Token expired &lt; 7 days ago</td><td>Grace period</td><td>Auto-renew</td></tr>
+      <tr><td>Token expired &gt; 7 days ago</td><td>Stale</td><td>Full re-verification required</td></tr>
+    </table>
+    <pre><code>POST /token/renew
+Body: { "spt": "&lt;current_token&gt;" }
+
+Response 200:
+{
+  "spt": "&lt;new_token&gt;",
+  "expires_in": 86400,
+  "renewed": true,
+  "method": "preemptive" | "grace_window"
+}</code></pre>
+
+</main>
 </div>
 </body>
 </html>

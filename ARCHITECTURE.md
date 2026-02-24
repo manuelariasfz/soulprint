@@ -1,4 +1,4 @@
-# Soulprint — Architecture (v0.3.5)
+# Soulprint — Architecture (v0.3.7)
 
 > Cada diagrama C4 tiene **dos formatos**:
 > - 🖼️ **Mermaid** — se renderiza visualmente en GitHub (para humanos)
@@ -21,6 +21,8 @@
 9. [Bot Reputation Layer](#bot-reputation-layer)
 10. [P2P Gossip Protocol](#p2p-gossip-protocol)
 11. [BFT P2P Consensus (v0.3.1)](#bft-p2p-consensus-v031)
+12. [Challenge-Response Peer Integrity (v0.3.7)](#challenge-response-peer-integrity-v037)
+13. [SPT Auto-Renewal (v0.3.6)](#spt-auto-renewal-v036)
 12. [Multi-Country Registry](#multi-country-registry)
 13. [Security Threat Matrix](#security-threat-matrix)
 14. [Data Flow — Full Journey](#data-flow--full-journey)

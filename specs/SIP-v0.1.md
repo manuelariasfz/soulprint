@@ -371,7 +371,89 @@ SOULPRINT_NETWORK=base-sepolia
 
 ---
 
-**Draft — v0.3.5**. Phases 1–5 complete + anti-farming + credential validators + biometric PROTOCOL constants + BFT P2P consensus (sin blockchain).  
+
+## SPT Auto-Renewal Extension (v0.3.6)
+
+### Motivation
+
+SPTs have a 24-hour lifetime. Previously, bots had to re-submit a full ZK proof after expiry. v0.3.6 adds a lightweight renewal path.
+
+### Renewal Windows
+
+| State | Condition | Action |
+|-------|-----------|--------|
+| Pre-emptive | `expires - now < TOKEN_RENEW_PREEMPTIVE_SECS (3600)` | Renew |
+| Grace | `now - expires < TOKEN_RENEW_GRACE_SECS (604800)` | Renew |
+| Stale | `now - expires >= 604800` | Full re-verify required |
+
+### `POST /token/renew`
+
+Request: `{ "spt": "<current_token>" }`
+
+Guards (in order):
+1. Token decodeable (valid Ed25519 signature)
+2. Within renewal window (pre-emptive OR grace)
+3. Anti-spam: 60-second cooldown per DID
+4. DID registered in node's P2P state
+5. Current reputation score ≥ `VERIFIED_SCORE_FLOOR` (52)
+
+Response: `{ spt, expires_in: 86400, renewed: true, method: "preemptive" | "grace_window" }`
+
+### Token constants (outside PROTOCOL hash)
+
+```
+TOKEN_LIFETIME_SECONDS       = 86400   (24h)
+TOKEN_RENEW_PREEMPTIVE_SECS  = 3600    (1h before expiry)
+TOKEN_RENEW_GRACE_SECS       = 604800  (7d post-expiry)
+TOKEN_RENEW_COOLDOWN_SECS    = 60      (anti-spam)
+```
+
+These constants are NOT included in `PROTOCOL_HASH` (operational, not consensus).
+
+---
+
+## Challenge-Response Peer Integrity Extension (v0.3.7)
+
+### Motivation
+
+An attacker with server access could modify `verifyProof()` to bypass ZK validation. The P2P network now actively verifies peer code integrity before accepting connections.
+
+### Protocol
+
+1. Challenger generates: `{ nonce, valid_proof: PROTOCOL_CHALLENGE_VECTOR, invalid_proof: mutate(vector, nonce) }`
+2. Peer responds: `{ result_valid, result_invalid, signature: Ed25519(results, node_key) }`
+3. Challenger validates: `result_valid == true AND result_invalid == false AND sig valid`
+
+### Invalid Proof Mutation
+
+```
+invalid.pi_a[0] = (valid.pi_a[0] + BigInt("0x" + nonce)) mod field_prime
+```
+
+- Any mutation to pi_a makes the Groth16 bilinear pairing equation fail
+- Fresh nonce per challenge prevents pre-computed responses
+
+### `POST /challenge`
+
+TTL: 30 seconds. Response timeout: 10 seconds.
+
+### Automatic Enforcement
+
+`POST /peers/register` runs `verifyPeerBehavior()` before registering any peer:
+- Peer passes challenge → registered
+- Peer fails challenge → HTTP 403, peer rejected
+
+### Critical Bug Fix (soulprint-zkp@0.1.5)
+
+`verifyProof()` was silently broken since v0.1.0 due to snarkjs CJS/ESM interop:
+- `import snarkjs from "snarkjs"` → `snarkjs_1.default.groth16` → undefined (crash)
+- Fix: `import * as snarkjs from "snarkjs"` → `snarkjs.groth16` ✅
+
+All existing tests used the on-chain Groth16Verifier (Solidity), not snarkjs, so the bug went undetected. Challenge tests explicitly call `snarkjs.groth16.verify()`.
+
+---
+
+**Draft — v0.3.7**. Phases 1–5 complete + anti-farming + credential validators + biometric PROTOCOL constants + BFT P2P consensus (sin blockchain).  
 Phase 6 (multi-country expansion) in progress.
 
 Feedback welcome: open an issue at https://github.com/manuelariasfz/soulprint/issues

@@ -230,7 +230,58 @@ Response:
     <pre><code>{ "proposalId": 0 }
 → { "txHash": "0x...", "proposalId": 0, "executed": true }</code></pre>
 
-  </main>
+  
+    <!-- POST /challenge -->
+    <h2 id="post-challenge"><code>POST /challenge</code> <span style="font-size:0.7em;background:#e63946;color:#fff;padding:2px 8px;border-radius:10px">v0.3.7</span></h2>
+    <p>Peer integrity check via ZK challenge-response. Verifies that the peer is running unmodified ZK verification code.</p>
+    <pre><code>POST /challenge
+Content-Type: application/json
+
+{
+  "challenge_id": "a3f1b2c4...",     // random UUID
+  "nonce": "deadbeef01234567...",    // 32-byte hex
+  "issued_at": 1740000000,           // unix timestamp (TTL: 30s)
+  "valid_proof": { ... },            // ZKProof — must verify as true
+  "invalid_proof": { ... }           // ZKProof mutated with nonce — must verify as false
+}
+
+// Response 200
+{
+  "challenge_id": "a3f1b2c4...",
+  "result_valid": true,
+  "result_invalid": false,
+  "verified_at": 1740000002,
+  "node_did": "did:key:z6Mk...",
+  "signature": "ed25519:abc..."
+}
+
+// Response 400 — missing fields or expired challenge
+// Response 403 — peer rejected (used in POST /peers/register flow)</code></pre>
+
+    <!-- POST /token/renew -->
+    <h2 id="post-token-renew"><code>POST /token/renew</code> <span style="font-size:0.7em;background:#4ade80;color:#000;padding:2px 8px;border-radius:10px">v0.3.6</span></h2>
+    <p>Auto-renew an SPT that is near expiry (< 1h remaining) or recently expired (grace window: 7 days).</p>
+    <pre><code>POST /token/renew
+Content-Type: application/json
+
+{ "spt": "&lt;current_spt_string&gt;" }
+
+// Response 200
+{
+  "spt": "&lt;new_spt_string&gt;",
+  "expires_in": 86400,
+  "renewed": true,
+  "method": "preemptive",   // or "grace_window"
+  "old_expired": false,
+  "node_did": "did:key:z6Mk..."
+}
+
+// Response 400 — token still valid (> 1h remaining), includes renew_after
+// Response 401 — token expired > 7 days (full re-verification required)
+// Response 403 — DID not registered or score below floor
+// Response 429 — cooldown (60s between renewals per DID)</code></pre>
+
+</main>
 </div>
 </body>
 </html>

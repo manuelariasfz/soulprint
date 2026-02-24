@@ -7,7 +7,7 @@ Soulprint lets any AI bot prove there's a verified human behind it — without r
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [[![npm soulprint](https://img.shields.io/npm/v/soulprint?label=soulprint&color=blue)](https://npmjs.com/package/soulprint)
 [![npm soulprint-mcp](https://img.shields.io/npm/v/soulprint-mcp?label=soulprint-mcp&color=purple)](https://npmjs.com/package/soulprint-mcp)
-![Phase](https://img.shields.io/badge/v0.3.5-phases%201--5%20%2B%20anti--farming-brightgreen)]()
+![Phase](https://img.shields.io/badge/v0.3.7-phases%201--5%20%2B%20hardened-brightgreen-brightgreen)]()
 [![npm soulprint-network](https://img.shields.io/npm/v/soulprint-network?label=soulprint-network&color=7c6cf5)](https://npmjs.com/package/soulprint-network)[![Built with](https://img.shields.io/badge/built%20with-Circom%20%2B%20snarkjs%20%2B%20InsightFace-purple)]()
 
 ---
@@ -226,9 +226,9 @@ After verify:     ~8MB RAM   (subprocess exits → memory freed)
 |---|---|---|---|
 | [`soulprint-core`](packages/core) | `0.1.6` | DID, SPT tokens, Poseidon nullifier, PROTOCOL constants, anti-farming | `npm i soulprint-core` |
 | [`soulprint-verify`](packages/verify-local) | `0.1.4` | OCR + face match (on-demand), biometric thresholds from PROTOCOL | `npm i soulprint-verify` |
-| [`soulprint-zkp`](packages/zkp) | `0.1.4` | Circom circuit + snarkjs prover, face_key via PROTOCOL.FACE_KEY_DIMS | `npm i soulprint-zkp` |
+| [`soulprint-zkp`](packages/zkp) | `0.1.5` | Circom circuit + snarkjs prover, face_key via PROTOCOL.FACE_KEY_DIMS | `npm i soulprint-zkp` |
 | [`soulprint-network`](packages/network) | `0.2.2` | Validator node: HTTP + P2P + credential validators + anti-farming | `npm i soulprint-network` |
-| [`soulprint-mcp`](packages/mcp) | `0.1.4` | MCP middleware (3 lines) | `npm i soulprint-mcp` |
+| [`soulprint-mcp`](packages/mcp) | `0.1.5` | MCP middleware (3 lines) | `npm i soulprint-mcp` |
 | [`soulprint-express`](packages/express) | `0.1.3` | Express/Fastify middleware | `npm i soulprint-express` |
 | [`soulprint`](packages/cli) | `0.1.3` | `npx soulprint` CLI | `npm i -g soulprint` |
 
@@ -528,6 +528,7 @@ npx -y mcp-colombia-hub
 ✅ Phase 3 — Validator nodes (HTTP + ZK verify + anti-Sybil registry)
 ✅ Phase 4 — SDKs (soulprint-mcp, soulprint-express)
 ✅ Phase 5 — P2P network (libp2p v2 · Kademlia DHT + GossipSub + mDNS · soulprint-network@0.2.2)
+✅ v0.3.7 — Challenge-Response peer integrity · snarkjs critical fix · SPT auto-renewal
 ✅ v0.3.5 — Anti-farming engine · Credential validators (email/phone/GitHub) · Biometric PROTOCOL constants
 🚧 Phase 6 — Multi-country support (passport, DNI, CURP, RUT...)
 🔮 Phase 7 — On-chain nullifier registry (optional, EVM-compatible)
@@ -607,6 +608,62 @@ if (check.needsRenew) {
   if (renewed) saveSpt(spt);  // persist the new token
 }
 ```
+
+
+### Phase 5g — Challenge-Response Peer Integrity + snarkjs Fix (v0.3.7) ✅
+
+#### Critical bug fix — `soulprint-zkp@0.1.5`
+
+`verifyProof()` was silently broken since v0.1.0. The snarkjs CJS module has `__esModule: true` but no `.default` property — TypeScript's `__importDefault` returned the module as-is, then code accessed `.default.groth16` which was `undefined`. All ZK proof verifications crashed at runtime.
+
+```typescript
+// ❌ Before (broken):
+import snarkjs from "snarkjs";          // compiles to snarkjs_1.default.groth16 → undefined
+
+// ✅ After (fixed):
+import * as snarkjs from "snarkjs";     // compiles to snarkjs.groth16 ✅
+```
+
+#### Challenge-Response Protocol (`soulprint-network@0.3.7`)
+
+Peers now cryptographically verify that remote nodes are running **unmodified ZK verification code** before accepting them into the network.
+
+```
+Challenger                          Peer
+    │                                 │
+    │── POST /challenge ─────────────►│
+    │   {challenge_id, nonce,         │
+    │    valid_proof,                 │  verifyProof(valid_proof)   → true
+    │    invalid_proof}               │  verifyProof(invalid_proof) → false
+    │                                 │  sign(results, node_key)
+    │◄── {result_valid: true, ────────│
+    │     result_invalid: false,      │
+    │     signature: Ed25519(...)}    │
+    │                                 │
+    │  verify signature ✅            │
+    │  result_valid == true ✅        │
+    │  result_invalid == false ✅     │
+    │                                 │
+    │  → PEER ACCEPTED                │
+```
+
+**Attacks blocked:**
+
+| Attack | Detection |
+|--------|-----------|
+| ZK always returns `true` (bypass) | `invalid_proof` must return `false` |
+| ZK always returns `false` (broken) | `valid_proof` must return `true` |
+| Pre-computed / cached response | Fresh random `nonce` makes `invalid_proof` unique per challenge |
+| Node impersonation | Ed25519 signature tied to `node_did` |
+| Replay attack | 30-second TTL on challenges |
+
+**Invalid proof generation** — the challenger mutates the valid proof with a random nonce:
+```
+invalid_proof.pi_a[0] = (valid_proof.pi_a[0] + nonce) mod p
+```
+This produces a cryptographically invalid proof that snarkjs will always reject — but it's unpredictable without the nonce.
+
+**Automatic peer verification** — `POST /peers/register` now runs `verifyPeerBehavior()` before accepting any peer. A peer with modified ZK code is rejected with HTTP 403.
 
 ## Protocol Spec
 
