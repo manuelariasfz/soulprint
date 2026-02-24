@@ -57,7 +57,7 @@ npx soulprint node
 npm install -g soulprint
 soulprint node</code></pre>
     <p>Example startup output:</p>
-    <pre><code>🌀 Soulprint Validator Node v0.2.0
+    <pre><code>🌀 Soulprint Validator Node v0.2.2
 ✅ HTTP API listening on http://0.0.0.0:4888
 ✅ P2P node started
    Peer ID:    12D3KooW[...generated peer ID...]
@@ -65,6 +65,43 @@ soulprint node</code></pre>
 ✅ mDNS discovery active (local network)
 ⏳ Waiting for bootstrap peers...
    (No bootstrap peers configured — running standalone)</code></pre>
+
+    <h2>Credential Validators <span style="font-size:0.7em;background:#7c6cf5;color:#fff;padding:2px 8px;border-radius:10px;margin-left:8px">v0.3.0</span></h2>
+    <p>Every validator node ships with three open-source credential verifiers — no API keys required.</p>
+
+    <h3>📧 Email OTP</h3>
+    <pre><code>POST /credentials/email/start   { "did": "...", "email": "user@example.com" }
+<span class="comment">// → OTP sent via nodemailer (dev: Ethereal preview, prod: SMTP config)</span>
+POST /credentials/email/verify  { "sessionId": "...", "otp": "123456" }
+<span class="comment">// → { credential: "EmailVerified", attestation }</span></code></pre>
+    <p>Config: <code>SMTP_HOST</code>, <code>SMTP_PORT</code>, <code>SMTP_USER</code>, <code>SMTP_PASS</code> (all optional for dev)</p>
+
+    <h3>📱 Phone TOTP (RFC 6238 — no SMS)</h3>
+    <pre><code>POST /credentials/phone/start   { "did": "...", "phone": "+573001234567" }
+<span class="comment">// → { sessionId, totpUri } — scan QR with Google Authenticator / Authy / Aegis</span>
+POST /credentials/phone/verify  { "sessionId": "...", "code": "179941" }
+<span class="comment">// → { credential: "PhoneVerified", attestation }</span></code></pre>
+
+    <h3>🐙 GitHub OAuth</h3>
+    <pre><code>GET /credentials/github/start?did=did:soulprint:abc...
+<span class="comment">// → redirects to github.com/login/oauth/authorize</span>
+GET /credentials/github/callback
+<span class="comment">// → { credential: "GitHubLinked", github: { login }, attestation }</span></code></pre>
+    <p>Config: <code>GITHUB_CLIENT_ID</code>, <code>GITHUB_CLIENT_SECRET</code>, <code>SOULPRINT_BASE_URL</code><br>
+    Create OAuth App: <a href="https://github.com/settings/applications/new" target="_blank">github.com/settings/applications/new</a></p>
+
+    <h2>Anti-Farming Engine <span style="font-size:0.7em;background:#e44;color:#fff;padding:2px 8px;border-radius:10px;margin-left:8px">v0.3.0</span></h2>
+    <p>Farming attempts are automatically detected and converted to <strong>-1 penalties</strong>.</p>
+    <table>
+      <tr><th>Rule</th><th>Limit</th></tr>
+      <tr><td>Daily gain cap</td><td>Max <strong>+1 point/day</strong> per DID</td></tr>
+      <tr><td>Weekly gain cap</td><td>Max <strong>+2 points/week</strong> per DID</td></tr>
+      <tr><td>New DID probation</td><td>DIDs &lt; 7 days need 2+ attestations before earning</td></tr>
+      <tr><td>Same-issuer cooldown</td><td>Max 1 reward/day per service</td></tr>
+      <tr><td>Session duration</td><td>Min <strong>30 seconds</strong></td></tr>
+      <tr><td>Tool entropy</td><td>Min <strong>4 distinct tools</strong></td></tr>
+      <tr><td>Robotic pattern</td><td>Call interval stddev &lt; 10% of mean → penalty</td></tr>
+    </table>
 
     <h2>Configuration</h2>
     <h3>Environment Variables</h3>
@@ -143,7 +180,7 @@ curl http://localhost:4888/info
 <span class="comment"># Response:</span>
 {
   <span class="string">"peerId"</span>:             <span class="string">"12D3KooW..."</span>,
-  <span class="string">"version"</span>:            <span class="string">"0.2.0"</span>,
+  <span class="string">"version"</span>:            <span class="string">"0.2.2"</span>,
   <span class="string">"httpPort"</span>:           <span class="keyword">4888</span>,
   <span class="string">"p2pPort"</span>:            <span class="keyword">6888</span>,
   <span class="string">"connectedPeers"</span>:     <span class="keyword">3</span>,

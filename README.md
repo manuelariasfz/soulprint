@@ -7,7 +7,7 @@ Soulprint lets any AI bot prove there's a verified human behind it — without r
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [[![npm soulprint](https://img.shields.io/npm/v/soulprint?label=soulprint&color=blue)](https://npmjs.com/package/soulprint)
 [![npm soulprint-mcp](https://img.shields.io/npm/v/soulprint-mcp?label=soulprint-mcp&color=purple)](https://npmjs.com/package/soulprint-mcp)
-![Phase](https://img.shields.io/badge/v0.2.0-phases%201--5%20complete-brightgreen)]()
+![Phase](https://img.shields.io/badge/v0.3.0-phases%201--5%20%2B%20anti--farming-brightgreen)]()
 [![npm soulprint-network](https://img.shields.io/npm/v/soulprint-network?label=soulprint-network&color=7c6cf5)](https://npmjs.com/package/soulprint-network)[![Built with](https://img.shields.io/badge/built%20with-Circom%20%2B%20snarkjs%20%2B%20InsightFace-purple)]()
 
 ---
@@ -172,7 +172,7 @@ npx soulprint node
 
 Output esperado:
 ```
-🌐 Soulprint Validator Node v0.2.0
+🌐 Soulprint Validator Node v0.2.2
    Node DID:     did:key:z6Mk...
    Listening:    http://0.0.0.0:4888
 
@@ -222,15 +222,15 @@ After verify:     ~8MB RAM   (subprocess exits → memory freed)
 
 ## Packages
 
-| Package | Description | Install |
-|---|---|---|
-| [`soulprint-core`](packages/core) | DID, SPT tokens, Poseidon nullifier | `npm i soulprint-core` |
-| [`soulprint-verify`](packages/verify-local) | OCR + face match (on-demand) | `npm i soulprint-verify` |
-| [`soulprint-zkp`](packages/zkp) | Circom circuit + snarkjs prover | `npm i soulprint-zkp` |
-| [`soulprint-network`](packages/network) | Validator node HTTP server | `npm i soulprint-network` |
-| [`soulprint-mcp`](packages/mcp) | MCP middleware (3 lines) | `npm i soulprint-mcp` |
-| [`soulprint-express`](packages/express) | Express/Fastify middleware | `npm i soulprint-express` |
-| [`soulprint`](packages/cli) | `npx soulprint` CLI | `npm i -g soulprint` |
+| Package | Version | Description | Install |
+|---|---|---|---|
+| [`soulprint-core`](packages/core) | `0.1.6` | DID, SPT tokens, Poseidon nullifier, PROTOCOL constants, anti-farming | `npm i soulprint-core` |
+| [`soulprint-verify`](packages/verify-local) | `0.1.4` | OCR + face match (on-demand), biometric thresholds from PROTOCOL | `npm i soulprint-verify` |
+| [`soulprint-zkp`](packages/zkp) | `0.1.4` | Circom circuit + snarkjs prover, face_key via PROTOCOL.FACE_KEY_DIMS | `npm i soulprint-zkp` |
+| [`soulprint-network`](packages/network) | `0.2.2` | Validator node: HTTP + P2P + credential validators + anti-farming | `npm i soulprint-network` |
+| [`soulprint-mcp`](packages/mcp) | `0.1.4` | MCP middleware (3 lines) | `npm i soulprint-mcp` |
+| [`soulprint-express`](packages/express) | `0.1.3` | Express/Fastify middleware | `npm i soulprint-express` |
+| [`soulprint`](packages/cli) | `0.1.3` | `npx soulprint` CLI | `npm i -g soulprint` |
 
 ---
 
@@ -413,6 +413,84 @@ Attestations propagate **P2P across all validator nodes** via libp2p GossipSub (
 
 ---
 
+## Anti-Farming Protection (v0.3.0)
+
+The reputation system is protected against point farming. **Detected farming → automatic -1 penalty** (not just rejection).
+
+Rules enforced by all validator nodes (`FARMING_RULES` — `Object.freeze`):
+
+| Rule | Limit |
+|---|---|
+| Daily gain cap | Max **+1 point/day** per DID |
+| Weekly gain cap | Max **+2 points/week** per DID |
+| New DID probation | DIDs < 7 days need **2+ existing attestations** before earning |
+| Same-issuer cooldown | Max 1 reward/day from the same service |
+| Session duration | Min **30 seconds** |
+| Tool entropy | Min **4 distinct tools** used |
+| Robotic pattern | Call interval stddev < 10% of mean → detected as bot |
+
+```typescript
+// Example: attacker trying to farm +1 every 60s
+// Result: +1 → converted to -1 (automatic penalty)
+POST /reputation/attest
+{ did, value: 1, context: "normal-usage", session: { duration: 8000, tools: ["search","search","search"] } }
+// → { value: -1, farming_detected: true, reason: "robotic-pattern" }
+```
+
+---
+
+## Credential Validators (v0.3.0)
+
+Every validator node ships with **3 open-source credential verifiers** — no API keys required:
+
+### 📧 Email OTP (nodemailer)
+```bash
+POST /credentials/email/start   { did, email }
+# → OTP sent to email (dev: Ethereal preview, prod: any SMTP)
+POST /credentials/email/verify  { sessionId, otp }
+# → issues credential:EmailVerified attestation, gossiped P2P
+```
+
+### 📱 Phone TOTP (RFC 6238 — no SMS, no API key)
+```bash
+POST /credentials/phone/start   { did, phone }
+# → returns totpUri — scan with Google Authenticator / Authy / Aegis
+POST /credentials/phone/verify  { sessionId, code }
+# → issues credential:PhoneVerified attestation
+```
+
+### 🐙 GitHub OAuth (native fetch)
+```bash
+GET /credentials/github/start?did=...
+# → redirects to github.com OAuth
+GET /credentials/github/callback
+# → issues credential:GitHubLinked attestation with github.login
+```
+Config: `GITHUB_CLIENT_ID` + `GITHUB_CLIENT_SECRET` + `SOULPRINT_BASE_URL`
+
+---
+
+## Protocol Constants (v0.3.0)
+
+All critical values are **immutable at runtime** via `Object.freeze()` in `soulprint-core`. Changing them requires a new SIP (Soulprint Improvement Proposal) and a protocol version bump.
+
+```typescript
+import { PROTOCOL } from 'soulprint-core';
+
+PROTOCOL.FACE_SIM_DOC_SELFIE    // 0.35 — min similarity document vs selfie
+PROTOCOL.FACE_SIM_SELFIE_SELFIE // 0.65 — min similarity selfie vs selfie (liveness)
+PROTOCOL.FACE_KEY_DIMS          // 32   — embedding dimensions for face_key
+PROTOCOL.FACE_KEY_PRECISION     // 1    — decimal precision (absorbs ±0.01 noise)
+PROTOCOL.SCORE_FLOOR            // 65   — minimum score any service can require
+PROTOCOL.VERIFIED_SCORE_FLOOR   // 52   — floor for DocumentVerified identities
+PROTOCOL.MIN_ATTESTER_SCORE     // 65   — minimum score to issue attestations
+PROTOCOL.VERIFY_RETRY_MAX       // 3    — max retries for remote verification
+```
+
+> These constants are **write-protected** — `PROTOCOL.FACE_SIM_DOC_SELFIE = 0.1` throws at runtime.
+
+---
+
 ## Live Ecosystem — mcp-colombia-hub
 
 [mcp-colombia-hub](https://github.com/manuelariasfz/mcp-colombia) is the **first verified service** in the Soulprint ecosystem:
@@ -420,7 +498,7 @@ Attestations propagate **P2P across all validator nodes** via libp2p GossipSub (
 - **Service score:** 80 (DocumentVerified + FaceMatch + GitHubLinked + BiometricBound)
 - **Auto-issues -1** when a bot spams (>5 req/60s)
 - **Auto-issues +1** when a bot completes 3+ tools normally
-- **Premium endpoint `trabajo_aplicar`** requires score ≥ 95
+- **Premium endpoint `trabajo_aplicar`** requires score ≥ 40
 
 ```bash
 npx -y mcp-colombia-hub
@@ -449,7 +527,8 @@ npx -y mcp-colombia-hub
 ✅ Phase 2 — ZK proofs (Circom circuit + snarkjs prover/verifier)
 ✅ Phase 3 — Validator nodes (HTTP + ZK verify + anti-Sybil registry)
 ✅ Phase 4 — SDKs (soulprint-mcp, soulprint-express)
-✅ Phase 5 — P2P network (libp2p v2 · Kademlia DHT + GossipSub + mDNS · soulprint-network@0.2.0)
+✅ Phase 5 — P2P network (libp2p v2 · Kademlia DHT + GossipSub + mDNS · soulprint-network@0.2.2)
+✅ v0.3.0 — Anti-farming engine · Credential validators (email/phone/GitHub) · Biometric PROTOCOL constants
 🚧 Phase 6 — Multi-country support (passport, DNI, CURP, RUT...)
 🔮 Phase 7 — On-chain nullifier registry (optional, EVM-compatible)
 ```

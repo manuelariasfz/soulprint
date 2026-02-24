@@ -56,7 +56,7 @@
     <h4>Response</h4>
     <pre><code>{
   <span class="string">"peerId"</span>:             <span class="string">"12D3KooW..."</span>,
-  <span class="string">"version"</span>:            <span class="string">"0.2.0"</span>,
+  <span class="string">"version"</span>:            <span class="string">"0.2.2"</span>,
   <span class="string">"httpPort"</span>:           <span class="keyword">4888</span>,
   <span class="string">"p2pPort"</span>:            <span class="keyword">6888</span>,
   <span class="string">"connectedPeers"</span>:     <span class="keyword">3</span>,
@@ -129,6 +129,39 @@
   <span class="string">"firstSeen"</span>:  <span class="string">"2026-02-24T10:00:00Z"</span>,
   <span class="string">"did"</span>:        <span class="string">"did:soulprint:abc123..."</span>   <span class="comment">// included if registered</span>
 }</code></pre>
+
+    <!-- Credential Validators -->
+    <h2>Credential Validators <span style="font-size:0.7em;background:#7c6cf5;color:#fff;padding:2px 8px;border-radius:10px;margin-left:8px">v0.3.0</span></h2>
+
+    <h3><span class="method method-post">POST</span> /credentials/email/start</h3>
+    <p>Send a 6-digit OTP to an email address.</p>
+    <pre><code><span class="comment">// Request</span>
+{ <span class="string">"did"</span>: <span class="string">"did:soulprint:..."</span>, <span class="string">"email"</span>: <span class="string">"user@example.com"</span> }
+<span class="comment">// Response</span>
+{ <span class="string">"sessionId"</span>: <span class="string">"abc123..."</span>, <span class="string">"message"</span>: <span class="string">"OTP sent"</span>, <span class="string">"preview"</span>: <span class="string">"https://ethereal.email/..."</span> }</code></pre>
+
+    <h3><span class="method method-post">POST</span> /credentials/email/verify</h3>
+    <pre><code>{ <span class="string">"sessionId"</span>: <span class="string">"abc123..."</span>, <span class="string">"otp"</span>: <span class="string">"123456"</span> }
+<span class="comment">// Response</span>
+{ <span class="string">"credential"</span>: <span class="string">"EmailVerified"</span>, <span class="string">"did"</span>: <span class="string">"..."</span>, <span class="string">"attestation"</span>: { ... } }</code></pre>
+
+    <h3><span class="method method-post">POST</span> /credentials/phone/start</h3>
+    <p>Get a TOTP URI to scan with Google Authenticator / Authy / Aegis. No SMS.</p>
+    <pre><code>{ <span class="string">"did"</span>: <span class="string">"..."</span>, <span class="string">"phone"</span>: <span class="string">"+573001234567"</span> }
+<span class="comment">// Response</span>
+{ <span class="string">"sessionId"</span>: <span class="string">"..."</span>, <span class="string">"totpUri"</span>: <span class="string">"otpauth://totp/Soulprint:..."</span>, <span class="string">"instructions"</span>: <span class="string">"Scan QR..."</span> }</code></pre>
+
+    <h3><span class="method method-post">POST</span> /credentials/phone/verify</h3>
+    <pre><code>{ <span class="string">"sessionId"</span>: <span class="string">"..."</span>, <span class="string">"code"</span>: <span class="string">"179941"</span> }
+<span class="comment">// Response</span>
+{ <span class="string">"credential"</span>: <span class="string">"PhoneVerified"</span>, <span class="string">"did"</span>: <span class="string">"..."</span>, <span class="string">"attestation"</span>: { ... } }</code></pre>
+
+    <h3><span class="method method-get">GET</span> /credentials/github/start?did=...</h3>
+    <p>Redirect to GitHub OAuth. Requires <code>GITHUB_CLIENT_ID</code> configured.</p>
+
+    <h3><span class="method method-get">GET</span> /credentials/github/callback</h3>
+    <p>OAuth callback. Issues <code>GitHubLinked</code> attestation after successful auth.</p>
+    <pre><code>{ <span class="string">"credential"</span>: <span class="string">"GitHubLinked"</span>, <span class="string">"did"</span>: <span class="string">"..."</span>, <span class="string">"github"</span>: { <span class="string">"login"</span>: <span class="string">"manuelariasfz"</span> }, <span class="string">"attestation"</span>: { ... } }</code></pre>
 
     <h2>Error Codes</h2>
     <table>

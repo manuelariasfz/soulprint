@@ -220,6 +220,45 @@ it has already seen — this is guaranteed by the protocol.
 
 ---
 
+## Anti-Farming Extension (v0.3.0)
+
+All validator nodes enforce `FARMING_RULES` (immutable via `Object.freeze()`). Farming attempts are **penalized (-1)**, not just rejected.
+
+Key rules: max +1/day, max +2/week, min 30s session, min 4 distinct tools, robotic call patterns (interval stddev/mean < 10%) → penalty.
+
+DIDs under 7 days old are in **probation**: they cannot earn points until they have 2+ existing attestations.
+
+---
+
+## Credential Validators Extension (v0.3.0)
+
+Validator nodes ship 3 open-source credential verifiers under `/credentials/`:
+
+| Endpoint | Method | Technology |
+|---|---|---|
+| `/credentials/email/start` + `/verify` | POST | nodemailer + crypto.randomInt |
+| `/credentials/phone/start` + `/verify` | POST | otpauth RFC 6238 (no SMS) |
+| `/credentials/github/start` + `/callback` | GET | GitHub OAuth + native fetch |
+
+Each verified credential issues a `BotAttestation` with context `credential:<Type>`, signed by the node keypair, gossiped to all peers.
+
+---
+
+## Biometric Protocol Constants Extension (v0.3.0)
+
+Biometric thresholds are now part of `PROTOCOL` (`Object.freeze()`), mandatory for all implementations:
+
+| Constant | Value | Rationale |
+|---|---|---|
+| `FACE_SIM_DOC_SELFIE` | `0.35` | Validated: real cédula CO + selfie → 0.365 ✅ |
+| `FACE_SIM_SELFIE_SELFIE` | `0.65` | Stricter: live photos, same quality |
+| `FACE_KEY_DIMS` | `32` | First 32 dims balance uniqueness vs speed |
+| `FACE_KEY_PRECISION` | `1` | 1 decimal = 0.1 steps, absorbs ±0.01 InsightFace noise |
+
+Threshold rationale: a completely different person scores < 0.15 with buffalo_sc. A same-person doc-vs-selfie with an older photo scores ~0.35–0.42.
+
+---
+
 ## Implementations
 
 - **Reference (TypeScript)**: https://github.com/manuelariasfz/soulprint
@@ -230,7 +269,7 @@ it has already seen — this is guaranteed by the protocol.
 
 ## Status
 
-**Draft — v0.2.0**. Phases 1–5 complete.  
+**Draft — v0.3.0**. Phases 1–5 complete + anti-farming + credential validators + biometric PROTOCOL constants.  
 Phase 6 (multi-country expansion) in progress.
 
 Feedback welcome: open an issue at https://github.com/manuelariasfz/soulprint/issues

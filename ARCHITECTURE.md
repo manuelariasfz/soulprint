@@ -531,6 +531,105 @@ Identity (80) + Reputation (17) = 97  →  PREMIUM desbloqueado
 
 ---
 
+## Anti-Farming Engine (v0.3.0)
+
+> `packages/core/src/anti-farming.ts` — `FARMING_RULES` es `Object.freeze()`
+
+El motor de anti-farming detecta intentos de ganar reputación artificialmente y **convierte el +1 en -1 automáticamente** (penalidad, no solo rechazo).
+
+### Reglas (`FARMING_RULES` — inamovibles)
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  FARMING_RULES (Object.freeze)                                      │
+├──────────────────────────┬──────────────────────────────────────────┤
+│ MAX_GAINS_PER_DAY        │ 1   (+1 máximo por día por DID)          │
+│ MAX_GAINS_PER_WEEK       │ 2   (+2 máximo por semana por DID)       │
+│ MIN_SESSION_MS           │ 30000  (sesión < 30s → inelegible)       │
+│ PROBATION_DAYS           │ 7   (nuevos DIDs en probation 7 días)    │
+│ PROBATION_MIN_ATTS       │ 2   (necesita 2 atts antes de ganar)     │
+│ SAME_ISSUER_COOLDOWN_MS  │ 86400000  (1 día por issuer)             │
+│ MIN_TOOL_ENTROPY         │ 4   (mínimo 4 tools distintas)           │
+│ ROBOTIC_STDDEV_RATIO     │ 0.10  (stddev/mean < 10% = robótico)     │
+└──────────────────────────┴──────────────────────────────────────────┘
+```
+
+### Flujo en `handleAttest()`
+
+```
+POST /reputation/attest
+         │
+         ▼
+ checkFarming(did, session, issuer)
+         │
+    ┌────┴────┐
+    │ clean   │  farming
+    │         ▼
+    │    att.value = -1  ← convierte +1 en -1
+    │    context = "farming-penalty:" + reason
+    │    recordFarmingStrike(did)
+    ▼
+ recordApprovedGain(did)
+ gossipAttestation(att)
+ → { value, farming_detected, reason }
+```
+
+---
+
+## Credential Validators (v0.3.0)
+
+> `packages/network/src/credentials/` — sin API keys externas
+
+Cada nodo validador incluye 3 verificadores de credenciales open source:
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│  Credential Router  (credentials/index.ts)                         │
+├────────────────────────┬───────────────────────────────────────────┤
+│ POST /email/start      │ nodemailer SMTP → OTP 6 dígitos           │
+│ POST /email/verify     │ valida OTP → BotAttestation gossiped      │
+├────────────────────────┼───────────────────────────────────────────┤
+│ POST /phone/start      │ otpauth RFC 6238 → totpUri (sin SMS)      │
+│ POST /phone/verify     │ valida TOTP code → BotAttestation         │
+├────────────────────────┼───────────────────────────────────────────┤
+│ GET  /github/start     │ redirect GitHub OAuth (native fetch)      │
+│ GET  /github/callback  │ exchange code → BotAttestation            │
+└────────────────────────┴───────────────────────────────────────────┘
+```
+
+Cada credencial verificada genera un `BotAttestation` con `context = "credential:EmailVerified"` (o PhoneVerified / GitHubLinked), firmado con la llave del nodo y gossiped a todos los peers.
+
+---
+
+## Protocol Constants (v0.3.0)
+
+> `packages/core/src/protocol-constants.ts` — `PROTOCOL = Object.freeze({...})`
+
+Todos los valores críticos del protocolo son **inamovibles en runtime**. Cambiar cualquiera requiere un nuevo SIP y bump de versión.
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  PROTOCOL (Object.freeze — toda la red usa los mismos valores)      │
+├───────────────────────────┬─────────────────────────────────────────┤
+│ SCORE_FLOOR               │ 65   — floor mínimo para minScore       │
+│ VERIFIED_SCORE_FLOOR      │ 52   — floor para DocumentVerified      │
+│ MIN_ATTESTER_SCORE        │ 65   — score mínimo para emitir atts    │
+│ VERIFY_RETRY_MAX          │ 3    — reintentos verificación remota   │
+│ VERIFY_RETRY_BASE_MS      │ 500  — backoff base                     │
+│ VERIFY_RETRY_MAX_MS       │ 8000 — backoff máximo                   │
+│ FACE_SIM_DOC_SELFIE       │ 0.35 — similitud doc vs selfie ★        │
+│ FACE_SIM_SELFIE_SELFIE    │ 0.65 — similitud selfie vs selfie       │
+│ FACE_KEY_DIMS             │ 32   — dims embedding para face_key     │
+│ FACE_KEY_PRECISION        │ 1    — precisión decimal (ruido ±0.01)  │
+│ DEFAULT_HTTP_PORT         │ 4888 — puerto HTTP del nodo             │
+│ DEFAULT_P2P_PORT          │ 6888 — puerto P2P (HTTP + 2000)         │
+└───────────────────────────┴─────────────────────────────────────────┘
+★ Validado con cédula CO real + selfie: similitud 0.365 → VERIFICADO
+  Una persona diferente obtiene < 0.15 con el mismo modelo.
+```
+
+---
+
 ## P2P Gossip Protocol
 
 > Fase 5 — libp2p GossipSub + Kademlia DHT (soulprint-network@0.2.0)
