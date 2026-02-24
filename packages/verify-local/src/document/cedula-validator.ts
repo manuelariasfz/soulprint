@@ -74,12 +74,13 @@ export function parseCedulaOCR(ocrText: string): DocumentValidationResult {
   let cedula_number: string | undefined;
 
   const cedulaPatterns = [
-    /C\.?C\.?\s*([0-9][0-9.\s]{4,12})/,           // "CC 12.345.678"
+    /NUIP\s*([0-9][0-9.\s]{6,14})/,                // "NUIP1.234.567.890" — primero
+    /C\.?C\.?\s*([0-9][0-9.\s]{4,12})/,             // "CC 12.345.678"
     /CÉDULA[^0-9]*([0-9][0-9.\s]{4,12})/,           // "CÉDULA DE CIUDADANÍA 12345678"
     /CIUDADANÍA[^0-9]*([0-9][0-9.\s]{4,12})/,
     /N[UÚ]MERO[^0-9]*([0-9][0-9.\s]{4,12})/,
-    /\b(\d{1,3}(?:\.\d{3}){1,3})\b/,               // "12.345.678" formato con puntos
-    /\b(\d{7,10})\b/,                               // número largo sin formato
+    /(?<![0-9])(\d{1,3}(?:\.\d{3}){2,3})(?![0-9])/, // "1.234.567.890" con puntos
+    /(?<![0-9])(\d{7,10})(?![0-9])/,                 // número largo sin formato
   ];
 
   for (const pattern of cedulaPatterns) {
@@ -157,7 +158,88 @@ export function parseCedulaOCR(ocrText: string): DocumentValidationResult {
   };
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────────────
+// ── MRZ TD1 parser (reverso cédula digital colombiana) ────────────────────────
+/**
+ * Parsea el MRZ TD1 del reverso de la cédula colombiana digital.
+ * Formato: 3 líneas de 30 caracteres cada una.
+ *
+ * Línea 2: DDMMYYCSEXEXPIRYNATCHECKNUMDOC<CHECK
+ *   - [0-5]   = fecha nacimiento YYMMDD
+ *   - [6]     = dígito verificador
+ *   - [7]     = sexo M/F
+ *   - [8-13]  = fecha expiración YYMMDD
+ *   - [14]    = dígito verificador
+ *   - [15-17] = código país (COL)
+ *   - [18-28] = número documento (cédula)
+ *
+ * Línea 3: APELLIDOS<<NOMBRES<<<...
+ */
+export function parseMRZ(mrzText: string): DocumentValidationResult {
+  const errors: string[] = [];
+
+  // Limpiar y encontrar líneas MRZ
+  const allLines = mrzText
+    .split("\n")
+    .map(l => l.replace(/[^A-Z0-9<]/gi, "").toUpperCase())
+    .filter(l => l.length >= 10);
+
+  const lines = allLines.filter(l => l.length >= 28);
+
+  if (lines.length < 2) {
+    return { valid: false, errors: ["MRZ incompleto — se necesitan al menos 2 líneas"] };
+  }
+
+  // Línea 2: datos biográficos
+  const line2 = lines.find(l => /^\d{6}[0-9<][MF<]/.test(l));
+  if (!line2) {
+    return { valid: false, errors: ["No se encontró línea MRZ con datos biográficos"] };
+  }
+
+  const yy   = line2.slice(0, 2);
+  const mm   = line2.slice(2, 4);
+  const dd   = line2.slice(4, 6);
+  const sex  = line2[7] as "M" | "F";
+
+  // Inferir siglo (si YY > 24 → 19xx, si <= 24 → 20xx)
+  const century = parseInt(yy) > 24 ? "19" : "20";
+  const fecha_nacimiento = `${century}${yy}-${mm}-${dd}`;
+
+  // Número de cédula: aparece en línea 2 posición 18-27 (o en línea 1)
+  const docNumRaw = line2.slice(18, 29).replace(/</g, "").trim();
+  const docNum    = docNumRaw.replace(/^0+/, ""); // quitar ceros a la izquierda
+
+  const numValidation = validateCedulaNumber(docNum);
+
+  // Línea 3: nombre — buscar en TODAS las líneas (puede ser más corta)
+  const line3 = allLines.find(l =>
+    l.includes("<<") &&
+    !/^\d{6}/.test(l) &&
+    /^[A-Z]{3,}<</.test(l)
+  );
+  let nombre: string | undefined;
+  if (line3) {
+    const parts = line3.split("<<");
+    const apellido = parts[0]?.replace(/</g, " ").trim();
+    const nombres  = parts.slice(1).join(" ").replace(/</g, " ").replace(/\s+/g," ").trim();
+    nombre = nombres && apellido ? `${nombres} ${apellido}`.trim() : (apellido || nombres);
+  }
+
+  if (!numValidation.valid) {
+    errors.push(`Número en MRZ inválido: ${numValidation.error}`);
+  }
+
+  return {
+    valid:           errors.length === 0,
+    cedula_number:   numValidation.valid ? docNum : undefined,
+    nombre,
+    fecha_nacimiento,
+    sexo:            sex === "M" || sex === "F" ? sex : undefined,
+    errors,
+    raw_ocr:         mrzText,
+  };
+}
+
+
 
 function normalizeFecha(fecha: string): string {
   // Normalizar a YYYY-MM-DD
