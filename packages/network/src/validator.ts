@@ -14,6 +14,8 @@ import {
 } from "soulprint-core";
 import { verifyProof, deserializeProof } from "soulprint-zkp";
 import { handleCredentialRoute } from "./credentials/index.js";
+import { encryptGossip, decryptGossip } from "./crypto/gossip-cipher.js";
+import { selectGossipPeers, routingStats } from "./crypto/peer-router.js";
 import {
   publishAttestationP2P,
   onAttestationReceived,
@@ -207,18 +209,29 @@ async function gossipAttestation(att: BotAttestation, excludeUrl?: string) {
     }
   }
 
-  // ── Canal 2: HTTP gossip (fallback para nodos legacy) ─────────────────────
-  // Incluye X-Protocol-Hash para que el peer receptor valide compatibilidad.
-  const targets = peers.filter(p => p !== excludeUrl);
+  // ── Canal 2: HTTP gossip con cifrado AES-256-GCM + XOR routing ────────────
+  // Selección de peers: XOR routing hacia el DID objetivo → O(log n)
+  // Con ≤10 peers: broadcast total. Con más: solo K=6 más cercanos.
+  const targets = selectGossipPeers(peers, att.target_did, excludeUrl);
+
+  if (targets.length < peers.length - (excludeUrl ? 1 : 0)) {
+    console.log(routingStats(peers.length, targets.length, att.target_did));
+  }
+
+  // Cifrar el payload con AES-256-GCM antes de enviar
+  // Solo nodos con PROTOCOL_HASH correcto pueden descifrar
+  const encrypted = encryptGossip({ attestation: att, from_peer: true });
+
   for (const peerUrl of targets) {
     fetch(`${peerUrl}/reputation/attest`, {
       method:  "POST",
       headers: {
         "Content-Type":    "application/json",
         "X-Gossip":        "1",
-        "X-Protocol-Hash": PROTOCOL_HASH,   // ← el receptor valida esto
+        "X-Protocol-Hash": PROTOCOL_HASH,
+        "X-Encrypted":     "aes-256-gcm-v1",   // señal al receptor
       },
-      body:    JSON.stringify({ attestation: att, from_peer: true }),
+      body:    JSON.stringify(encrypted),
       signal:  AbortSignal.timeout(GOSSIP_TIMEOUT_MS),
     }).catch(() => { /* peer unreachable — ignore */ });
   }
@@ -356,16 +369,31 @@ function handleGetReputation(res: ServerResponse, did: string) {
 async function handleAttest(req: IncomingMessage, res: ServerResponse, ip: string) {
   if (!checkRateLimit(ip)) return json(res, 429, { error: "Rate limit exceeded" });
 
-  let body: any;
-  try { body = await readBody(req); } catch (e: any) { return json(res, 400, { error: e.message }); }
+  let rawBody: any;
+  try { rawBody = await readBody(req); } catch (e: any) { return json(res, 400, { error: e.message }); }
+
+  // ── Descifrado AES-256-GCM (gossip cifrado desde peers) ──────────────────
+  // Si el header X-Encrypted está presente, descifrar antes de procesar.
+  // Un nodo con PROTOCOL_HASH diferente no puede descifrar → falla aquí.
+  let body = rawBody;
+  const isEncrypted = req.headers["x-encrypted"] === "aes-256-gcm-v1";
+  if (isEncrypted) {
+    const result = decryptGossip(rawBody);
+    if (!result.ok) {
+      console.warn(`[crypto] Gossip descifrado fallido desde ${ip}: ${result.error}`);
+      return json(res, 403, {
+        error:  "Encrypted gossip could not be decrypted",
+        reason: result.error,
+        hint:   "Ensure your node runs the official soulprint-network with the correct PROTOCOL_HASH",
+      });
+    }
+    body = result.payload;
+  }
 
   const { attestation, service_spt, from_peer } = body ?? {};
   if (!attestation) return json(res, 400, { error: "Missing field: attestation" });
 
   // ── Protocol Hash Enforcement (gossip desde peers) ────────────────────────
-  // Si la attestation viene de un peer (X-Gossip: 1), validamos que el peer
-  // opera con las mismas constantes de protocolo.
-  // Un nodo con constantes modificadas no puede inyectar attestations en la red.
   if (from_peer) {
     const peerHash = req.headers["x-protocol-hash"] as string | undefined;
     if (peerHash && !isProtocolHashCompatible(peerHash)) {
