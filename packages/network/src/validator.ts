@@ -17,6 +17,7 @@ import { handleCredentialRoute } from "./credentials/index.js";
 import { encryptGossip, decryptGossip } from "./crypto/gossip-cipher.js";
 import { selectGossipPeers, routingStats } from "./crypto/peer-router.js";
 import { NullifierConsensus, AttestationConsensus, StateSyncManager } from "./consensus/index.js";
+import { BlockchainAnchor } from "./blockchain/blockchain-anchor.js";
 import {
   publishAttestationP2P,
   onAttestationReceived,
@@ -690,6 +691,45 @@ export function startValidatorNode(port: number = PORT) {
   // Actualizar peer count en nullifierConsensus al cambiar peers
   setInterval(() => nullifierConsensus.setPeerCount(peers.length), 5_000);
 
+  // ── Blockchain backup (P2P primario + blockchain como backup) ─────────────
+  // P2P confirma primero → blockchain ancla async (no bloquea al usuario)
+  const anchor = new BlockchainAnchor({
+    storePath: join(NODE_DIR, "blockchain-queue"),
+  });
+
+  // Conectar en background (no bloquea el arranque del nodo)
+  anchor.connect().catch(() => {});
+
+  // Escuchar eventos del consenso y anclar async
+  nullifierConsensus.on("committed", (entry: import("./consensus/index.js").CommittedNullifier) => {
+    anchor.anchorNullifier({
+      nullifier:        entry.nullifier,
+      did:              entry.did,
+      documentVerified: true,
+      faceVerified:     true,
+      zkProof: {
+        a:      [0n, 0n] as [bigint, bigint],
+        b:      [[0n, 0n], [0n, 0n]] as [[bigint, bigint], [bigint, bigint]],
+        c:      [0n, 0n] as [bigint, bigint],
+        inputs: [BigInt("0x" + entry.nullifier.replace(/^0x/, "").slice(0, 16).padEnd(16, "0") || "1"), 1n] as [bigint, bigint],
+      },
+    });
+  });
+
+  attestConsensus.on("attested", (entry: import("./consensus/index.js").AttestEntry) => {
+    anchor.anchorAttestation({
+      issuerDid:  entry.issuerDid,
+      targetDid:  entry.targetDid,
+      value:      entry.value,
+      context:    entry.context,
+      signature:  entry.sig,
+    });
+  });
+
+  anchor.on("anchored", (type: string, id: string, txHash: string) => {
+    console.log(`[anchor] ${type} ${id.slice(0, 12)}... → blockchain tx ${txHash.slice(0, 12)}...`);
+  });
+
   // ── Credential context (para el router de credenciales) ───────────────────
   const credentialCtx = {
     nodeKeypair,
@@ -726,6 +766,11 @@ export function startValidatorNode(port: number = PORT) {
       return handleGetReputation(res, decodeURIComponent(cleanUrl.replace("/reputation/", "")));
     if (cleanUrl.startsWith("/nullifier/")   && req.method === "GET")
       return handleNullifierCheck(res, decodeURIComponent(cleanUrl.replace("/nullifier/", "")));
+
+    // ── Blockchain anchor status ──────────────────────────────────────────────
+    if (cleanUrl === "/anchor/stats" && req.method === "GET") {
+      return json(res, 200, anchor.getStats());
+    }
 
     // ── Consensus P2P endpoints (sin EVM, sin gas) ─────────────────────────
     // GET /consensus/state-info — handshake para state-sync
