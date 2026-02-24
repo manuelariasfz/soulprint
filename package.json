@@ -1,16 +1,20 @@
 {
   "name": "soulprint",
   "private": true,
-  "workspaces": ["packages/*", "apps/*"],
+  "workspaces": ["packages/*"],
   "scripts": {
-    "build":   "pnpm -r build",
-    "test":    "pnpm -r test",
-    "dev":     "pnpm -r --parallel dev",
-    "clean":   "pnpm -r exec rm -rf dist node_modules"
+    "build":         "pnpm -r build",
+    "test":          "node tests/suite.js",
+    "test:pentest":  "node tests/pentest-node.js",
+    "test:zkp":      "cd packages/zkp && node dist/prover.test.js",
+    "test:all":      "node tests/suite.js && node tests/pentest-node.js && cd packages/zkp && node dist/prover.test.js",
+    "node":          "node packages/network/dist/server.js",
+    "dev":           "pnpm -r --parallel dev",
+    "clean":         "pnpm -r exec rm -rf dist"
   },
   "devDependencies": {
-    "typescript": "^5.4.0",
+    "typescript":  "^5.4.0",
     "@types/node": "^20.0.0"
   },
-  "engines": { "node": ">=18.0.0" }
+  "engines": { "node": ">=18.0.0", "pnpm": ">=8.0.0" }
 }

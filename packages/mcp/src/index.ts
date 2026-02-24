@@ -37,21 +37,33 @@ export function verifySPT(
   opts:  SoulprintOptions = {}
 ): { allowed: boolean; token?: SoulprintToken; reason?: string } {
 
-  if (!spt) return { allowed: false, reason: "No Soulprint token provided" };
+  if (!spt) {
+    const r = { allowed: false, reason: "No Soulprint token provided" };
+    opts.onRejected?.(r.reason);
+    return r;
+  }
 
   const token = decodeToken(spt);
-  if (!token) return { allowed: false, reason: "Invalid or expired Soulprint token" };
+  if (!token) {
+    const r = { allowed: false, reason: "Invalid or expired Soulprint token" };
+    opts.onRejected?.(r.reason);
+    return r;
+  }
 
   const minScore = opts.minScore ?? 40;
   if (token.score < minScore) {
-    return { allowed: false, reason: `Trust score too low: ${token.score} < ${minScore}` };
+    const r = { allowed: false, reason: `Trust score too low: ${token.score} < ${minScore}` };
+    opts.onRejected?.(r.reason);
+    return r;
   }
 
   if (opts.minLevel) {
     const required = LEVEL_SCORES[opts.minLevel] ?? 0;
     const actual   = LEVEL_SCORES[token.level]   ?? 0;
     if (actual < required) {
-      return { allowed: false, reason: `Trust level too low: ${token.level} < ${opts.minLevel}` };
+      const r = { allowed: false, reason: `Trust level too low: ${token.level} < ${opts.minLevel}` };
+      opts.onRejected?.(r.reason);
+      return r;
     }
   }
 
@@ -59,10 +71,13 @@ export function verifySPT(
     const required = Array.isArray(opts.require) ? opts.require : [opts.require];
     const missing  = required.filter(c => !token.credentials.includes(c));
     if (missing.length > 0) {
-      return { allowed: false, reason: `Missing credentials: ${missing.join(", ")}` };
+      const r = { allowed: false, reason: `Missing credentials: ${missing.join(", ")}` };
+      opts.onRejected?.(r.reason);
+      return r;
     }
   }
 
+  opts.onVerified?.(token);
   return { allowed: true, token };
 }
 
