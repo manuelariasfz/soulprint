@@ -7,7 +7,7 @@ Soulprint lets any AI bot prove there's a verified human behind it — without r
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [[![npm soulprint](https://img.shields.io/npm/v/soulprint?label=soulprint&color=blue)](https://npmjs.com/package/soulprint)
 [![npm soulprint-mcp](https://img.shields.io/npm/v/soulprint-mcp?label=soulprint-mcp&color=purple)](https://npmjs.com/package/soulprint-mcp)
-![Phase](https://img.shields.io/badge/v0.3.3-phases%201--5%20%2B%20anti--farming-brightgreen)]()
+![Phase](https://img.shields.io/badge/v0.3.5-phases%201--5%20%2B%20anti--farming-brightgreen)]()
 [![npm soulprint-network](https://img.shields.io/npm/v/soulprint-network?label=soulprint-network&color=7c6cf5)](https://npmjs.com/package/soulprint-network)[![Built with](https://img.shields.io/badge/built%20with-Circom%20%2B%20snarkjs%20%2B%20InsightFace-purple)]()
 
 ---
@@ -413,7 +413,7 @@ Attestations propagate **P2P across all validator nodes** via libp2p GossipSub (
 
 ---
 
-## Anti-Farming Protection (v0.3.3)
+## Anti-Farming Protection (v0.3.5)
 
 The reputation system is protected against point farming. **Detected farming → automatic -1 penalty** (not just rejection).
 
@@ -439,7 +439,7 @@ POST /reputation/attest
 
 ---
 
-## Credential Validators (v0.3.3)
+## Credential Validators (v0.3.5)
 
 Every validator node ships with **3 open-source credential verifiers** — no API keys required:
 
@@ -470,7 +470,7 @@ Config: `GITHUB_CLIENT_ID` + `GITHUB_CLIENT_SECRET` + `SOULPRINT_BASE_URL`
 
 ---
 
-## Protocol Constants (v0.3.3)
+## Protocol Constants (v0.3.5)
 
 All critical values are **immutable at runtime** via `Object.freeze()` in `soulprint-core`. Changing them requires a new SIP (Soulprint Improvement Proposal) and a protocol version bump.
 
@@ -528,7 +528,7 @@ npx -y mcp-colombia-hub
 ✅ Phase 3 — Validator nodes (HTTP + ZK verify + anti-Sybil registry)
 ✅ Phase 4 — SDKs (soulprint-mcp, soulprint-express)
 ✅ Phase 5 — P2P network (libp2p v2 · Kademlia DHT + GossipSub + mDNS · soulprint-network@0.2.2)
-✅ v0.3.3 — Anti-farming engine · Credential validators (email/phone/GitHub) · Biometric PROTOCOL constants
+✅ v0.3.5 — Anti-farming engine · Credential validators (email/phone/GitHub) · Biometric PROTOCOL constants
 🚧 Phase 6 — Multi-country support (passport, DNI, CURP, RUT...)
 🔮 Phase 7 — On-chain nullifier registry (optional, EVM-compatible)
 ```

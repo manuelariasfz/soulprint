@@ -1,4 +1,4 @@
-# Soulprint — Architecture (v0.3.3)
+# Soulprint — Architecture (v0.3.5)
 
 > Cada diagrama C4 tiene **dos formatos**:
 > - 🖼️ **Mermaid** — se renderiza visualmente en GitHub (para humanos)
@@ -811,6 +811,42 @@ Issuer firma ATTEST{issuerDid, targetDid, +1/-1, context, ts, sig}
 ```
 
 
+
+
+### Security Hardening (v0.3.5)
+
+**Fix 1 — Real Groth16Verifier (no más mock en producción)**
+
+```
+Antes (Mock):   verifyProof() → return input[0] != 0  ← acepta todo
+Ahora (Real):   verifyProof() → matemática Groth16 completa on-chain
+                  proof inválida → REVERTS
+                  proof falsa   → REVERTS
+                  solo proof ZK real del circuito → acepta
+
+Admin del SoulprintRegistry = address(0) (bloqueado para siempre)
+Solo GovernanceModule (70% supermayoría) puede cambiar el verifier.
+```
+
+**Fix 2 — Code Integrity Hash**
+
+```
+Build time:  sha256(src/*.ts) → dist/code-hash.json
+Runtime:     validator.ts lee code-hash.json al arrancar
+API:         GET /health → { codeHash, codeHashHex, governanceApprovedHash }
+Governance:  puede registrar hashes aprobados on-chain
+Detección:   nodo con código modificado → codeHash diferente → peers detectan
+```
+
+**Test coverage (245/245):**
+
+| Suite | Tests |
+|---|---|
+| suite.js | 104 |
+| consensus-tests.mjs | 32 |
+| blockchain-e2e-tests.mjs | 33 |
+| governance-tests.mjs | 33 |
+| fix-verification-tests.mjs | 43 |
 
 ### GovernanceModule — Governance on-chain (v0.3.3)
 
