@@ -1,0 +1,23 @@
+{
+  "name": "soulprint-blockchain",
+  "version": "0.1.0",
+  "description": "Soulprint smart contracts — EVM blockchain backend",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test":    "hardhat test",
+    "deploy:local":   "hardhat run scripts/deploy.ts --network hardhat",
+    "deploy:testnet": "hardhat run scripts/deploy.ts --network base-sepolia",
+    "deploy:mainnet": "hardhat run scripts/deploy.ts --network base-mainnet",
+    "node": "hardhat node"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@nomicfoundation/hardhat-ethers": "^3.0.0",
+    "hardhat": "^2.22.0",
+    "ethers": "^6.13.0",
+    "dotenv": "^16.4.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.4.0",
+    "@types/node": "^20.0.0"
+  }
+}
