@@ -4,7 +4,9 @@ import { join }     from "node:path";
 import { homedir }  from "node:os";
 import {
   generateKeypair, keypairFromPrivateKey, SoulprintKeypair,
-  decodeToken, sign,
+  decodeToken, sign, createToken,
+  TOKEN_LIFETIME_SECONDS, TOKEN_RENEW_PREEMPTIVE_SECS,
+  TOKEN_RENEW_GRACE_SECS, TOKEN_RENEW_COOLDOWN_SECS,
   BotAttestation, BotReputation,
   verifyAttestation, computeReputation, defaultReputation,
   PROTOCOL, PROTOCOL_HASH, isProtocolCompatible, isProtocolHashCompatible, computeTotalScoreWithFloor,
@@ -617,6 +619,133 @@ async function handleVerify(req: IncomingMessage, res: ServerResponse, nodeKeypa
   });
 }
 
+// ── POST /token/renew ─────────────────────────────────────────────────────────
+/**
+ * Auto-renueva un SPT próximo a expirar o recién expirado.
+ *
+ * REGLAS:
+ *  • Token dentro del período de pre-renew (< 1h restante) → renovar
+ *  • Token expirado hace < 7 días → renovar (grace period)
+ *  • Token expirado hace > 7 días → denegar, requiere re-verificación completa
+ *  • Score actual < VERIFIED_SCORE_FLOOR → denegar
+ *  • Cooldown: un mismo DID no puede renovar más de 1 vez cada 60s
+ *
+ * Body: { spt: "<token_actual>" }
+ * Respuesta: { spt: "<token_nuevo>", expires_in: <segundos>, renewed: true }
+ */
+async function handleTokenRenew(
+  req: IncomingMessage,
+  res: ServerResponse,
+  nodeKeypair: SoulprintKeypair,
+) {
+  const body = await readBody(req) as { spt?: string };
+  if (!body?.spt) return json(res, 400, { error: "Required: spt" });
+
+  // Decodificar sin verificar expiración (queremos ver el DID aunque esté expirado)
+  const token = decodeToken(body.spt);
+  if (!token) return json(res, 401, { error: "Invalid SPT — cannot decode" });
+
+  const nowSecs = Math.floor(Date.now() / 1000);
+  const secsUntilExpiry = token.expires - nowSecs;
+  const secsAfterExpiry = nowSecs - token.expires;
+
+  // Ventana de renovación permitida
+  const TOKEN_LIFETIME  = TOKEN_LIFETIME_SECONDS;
+  const RENEW_PREEMPT   = TOKEN_RENEW_PREEMPTIVE_SECS;
+  const RENEW_GRACE     = TOKEN_RENEW_GRACE_SECS;
+  const RENEW_COOLDOWN  = TOKEN_RENEW_COOLDOWN_SECS;
+
+  // ── Verificar ventana de tiempo ──────────────────────────────────────────
+  const isExpired        = secsUntilExpiry <= 0;
+  const inPreemptWindow  = !isExpired && secsUntilExpiry <= RENEW_PREEMPT;
+  const inGraceWindow    = isExpired && secsAfterExpiry <= RENEW_GRACE;
+
+  if (!inPreemptWindow && !inGraceWindow) {
+    if (!isExpired) {
+      return json(res, 400, {
+        error:        "Token válido — no necesita renovación aún",
+        expires_in:   secsUntilExpiry,
+        renew_after:  secsUntilExpiry - RENEW_PREEMPT,
+      });
+    }
+    return json(res, 401, {
+      error:        "Token expirado hace más de 7 días — requiere re-verificación completa",
+      expired_ago:  secsAfterExpiry,
+      max_grace:    RENEW_GRACE,
+    });
+  }
+
+  // ── Anti-spam: cooldown por DID ──────────────────────────────────────────
+  const lastRenewKey = `renew:${token.did}`;
+  const lastRenew    = (repStore[token.did] as any)?._lastRenew ?? 0;
+  if (nowSecs - lastRenew < RENEW_COOLDOWN) {
+    return json(res, 429, {
+      error:      "Renovación muy frecuente — espera 60s entre renovaciones",
+      retry_in:   RENEW_COOLDOWN - (nowSecs - lastRenew),
+    });
+  }
+
+  // ── Verificar que el DID sigue registrado en el estado P2P ───────────────
+  const nullifierPair  = Object.entries(nullifiers).find(([, n]) => n.did === token.did);
+  const nullifierEntry = nullifierPair?.[1];
+  if (!nullifierEntry) {
+    return json(res, 403, {
+      error: "DID no registrado en este nodo — requiere re-verificación",
+      did:   token.did,
+    });
+  }
+  const nullifierHash = nullifierPair![0];
+
+  // ── Verificar score actual (puede haber bajado desde el último token) ────
+  const repEntry    = repStore[token.did];
+  const currentRep  = repEntry
+    ? computeTotalScoreWithFloor(
+        repEntry.identityScore ?? 0,
+        repEntry.score ?? 0,
+        repEntry.hasDocumentVerified ?? false
+      )
+    : 0;
+  const scoreFloor  = PROTOCOL.VERIFIED_SCORE_FLOOR ?? 52;
+
+  if (currentRep < scoreFloor) {
+    return json(res, 403, {
+      error:       "Score por debajo del floor — renovación denegada",
+      score:       currentRep,
+      floor:       scoreFloor,
+      hint:        "El bot necesita más attestations positivas",
+    });
+  }
+
+  // ── Todo OK → emitir nuevo SPT ───────────────────────────────────────────
+  // Mantener las mismas credenciales y score del token original
+  const newSpt = createToken(
+    nodeKeypair,
+    nullifierHash,           // nullifier hash (fuente de verdad)
+    (token.credentials ?? []) as any,
+    {
+      lifetimeSeconds:  TOKEN_LIFETIME,
+      country:          token.country,
+    }
+  );
+
+  // Registrar timestamp de renovación (anti-spam)
+  if (repStore[token.did]) {
+    (repStore[token.did] as any)._lastRenew = nowSecs;
+    saveReputation();
+  }
+
+  console.log(`[renew] ✅ ${token.did.slice(0, 20)}... → nuevo SPT (${isExpired ? "post-grace" : "pre-emptivo"})`);
+
+  return json(res, 200, {
+    spt:         newSpt,
+    expires_in:  TOKEN_LIFETIME,
+    renewed:     true,
+    method:      isExpired ? "grace_window" : "preemptive",
+    old_expired: isExpired,
+    node_did:    nodeKeypair.did,
+  });
+}
+
 // ── GET /nullifier/:hash ──────────────────────────────────────────────────────
 function handleNullifierCheck(res: ServerResponse, nullifier: string) {
   if (!/^(0x)?[0-9a-fA-F]{1,128}$/.test(nullifier))
@@ -771,6 +900,7 @@ export function startValidatorNode(port: number = PORT) {
     if (cleanUrl === "/info"                 && req.method === "GET")  return handleInfo(res, nodeKeypair);
     if (cleanUrl === "/protocol"             && req.method === "GET")  return handleProtocol(res);
     if (cleanUrl === "/verify"               && req.method === "POST") return handleVerify(req, res, nodeKeypair, ip);
+    if (cleanUrl === "/token/renew"          && req.method === "POST") return handleTokenRenew(req, res, nodeKeypair);
     if (cleanUrl === "/reputation/attest"    && req.method === "POST") return handleAttest(req, res, ip);
     if (cleanUrl === "/peers/register"       && req.method === "POST") return handlePeerRegister(req, res);
     if (cleanUrl === "/peers"                && req.method === "GET")  return handleGetPeers(res);
@@ -953,6 +1083,7 @@ export function startValidatorNode(port: number = PORT) {
     console.log(`   Known peers:  ${peers.length}`);
     console.log(`\n   Core endpoints:`);
     console.log(`   POST /verify              verify ZK proof + co-sign`);
+    console.log(`   POST /token/renew         auto-renew SPT (pre-emptivo 1h / grace 7d)`);
     console.log(`   GET  /health              code integrity + governance status`);
     console.log(`   GET  /info                node info`);
     console.log(`   GET  /protocol            protocol constants (immutable)`);

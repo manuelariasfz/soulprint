@@ -1,6 +1,7 @@
 import {
   decodeToken, SoulprintToken, TrustLevel, CredentialType,
   PROTOCOL, clampMinScore, withRetry,
+  needsRenewal, autoRenew,
 } from "soulprint-core";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -28,6 +29,13 @@ export interface SoulprintOptions {
    * E.g.: "http://localhost:4888"
    */
   validatorUrl?: string;
+
+  /**
+   * URL del nodo para auto-renew del SPT.
+   * Si es el mismo que validatorUrl, usa el mismo nodo.
+   * Si no se provee, usa validatorUrl como fallback.
+   */
+  nodeUrl?: string;
 
   /** Called when a valid token is found (for logging, analytics, etc.) */
   onVerified?: (token: SoulprintToken) => void;
@@ -176,9 +184,26 @@ export async function verifySPTRemote(
  */
 export function requireSoulprint(opts: SoulprintOptions = {}) {
   const effectiveMinScore = clampMinScore(opts.minScore ?? PROTOCOL.SCORE_FLOOR);
+  const renewNodeUrl = opts.nodeUrl ?? opts.validatorUrl;
 
   return async (context: any, next: () => Promise<any>) => {
-    const spt = extractSPT(context);
+    let spt = extractSPT(context);
+
+    // ── Auto-renew preemptivo ────────────────────────────────────────────
+    if (spt && renewNodeUrl) {
+      const check = needsRenewal(spt);
+      if (check.needsRenew) {
+        const renewal = await autoRenew(spt, { nodeUrl: renewNodeUrl });
+        if (renewal.renewed) {
+          spt = renewal.spt;
+          if (context.meta) {
+            context.meta["x-soulprint-token-renewed"] = renewal.spt;
+            context.meta["x-soulprint-expires-in"]    = String(renewal.expiresIn ?? 86400);
+          }
+        }
+      }
+    }
+
     const result = verifySPT(spt, { ...opts, minScore: effectiveMinScore });
 
     if (!result.allowed) {

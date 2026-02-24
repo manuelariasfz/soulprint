@@ -311,3 +311,9 @@ export {
   exportAuditStore,
 } from "./anti-farming.js";
 export type { SessionContext, FarmingCheckResult, DIDAuditEntry } from "./anti-farming.js";
+
+// ── Token Renewal ──────────────────────────────────────────────────────────────
+export { needsRenewal, renewToken, autoRenew } from "./token-renewal.js";
+export type { RenewResult, RenewOptions } from "./token-renewal.js";
+
+export { TOKEN_LIFETIME_SECONDS, TOKEN_RENEW_PREEMPTIVE_SECS, TOKEN_RENEW_GRACE_SECS, TOKEN_RENEW_COOLDOWN_SECS } from "./protocol-constants.js";

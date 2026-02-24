@@ -169,6 +169,14 @@ export function computeProtocolHash(): string {
  */
 export const PROTOCOL_HASH = computeProtocolHash();
 
+// ── Token lifecycle constants ─────────────────────────────────────────────────
+// FUERA del PROTOCOL object para no cambiar el PROTOCOL_HASH.
+// Para cambiarlas se requiere una nueva versión del protocolo (governance).
+export const TOKEN_LIFETIME_SECONDS      = 86_400;   // 24h default SPT lifetime
+export const TOKEN_RENEW_PREEMPTIVE_SECS = 3_600;    // 1h before expiry → auto-renew
+export const TOKEN_RENEW_GRACE_SECS      = 604_800;  // 7 days post-expiry grace window
+export const TOKEN_RENEW_COOLDOWN_SECS   = 60;       // anti-spam: min 60s between renewals
+
 /**
  * Verifica que el hash de protocolo de un peer remoto coincide con el local.
  * Retorna true si el peer es compatible, false si debe ser rechazado.

@@ -1,5 +1,5 @@
-import { decodeToken, SoulprintToken, TrustLevel, CredentialType } from "soulprint-core";
-import { verifySPT, SoulprintOptions }                              from "./verify.js";
+import { decodeToken, SoulprintToken, TrustLevel, CredentialType, needsRenewal, autoRenew } from "soulprint-core";
+import { verifySPT, SoulprintOptions } from "./verify.js";
 
 export { verifySPT, SoulprintOptions };
 
@@ -16,28 +16,64 @@ export { verifySPT, SoulprintOptions };
  *
  * const app = express();
  *
- * // Protect entire API — require KYC verified humans
- * app.use(soulprint({ minScore: 60 }));
+ * // Basic — require verified bots
+ * app.use(soulprint({ minScore: 40 }));
  *
- * // Protect specific route — require full biometric KYC
- * app.post("/sensitive", soulprint({ require: ["DocumentVerified", "FaceMatch"] }), handler);
+ * // Con auto-renew: el middleware renueva el SPT automáticamente
+ * // cuando queda < 1h o expiró hace < 7 días.
+ * // El nuevo token llega en el header X-Soulprint-Token-Renewed.
+ * app.use(soulprint({ minScore: 40, nodeUrl: "https://my-validator.example.com" }));
  *
- * // Inside a handler — get the verified identity
- * app.get("/me", soulprint({ minScore: 20 }), (req, res) => {
- *   const identity = req.soulprint;  // SoulprintToken
- *   res.json({ nullifier: identity.nullifier, score: identity.score });
- * });
+ * // El cliente debe leer el header y guardar el nuevo token:
+ * // X-Soulprint-Token-Renewed: <nuevo_spt>
  * ```
  *
  * Token is read from:
  *   - HTTP header:   X-Soulprint: <SPT>
  *   - Query param:   ?spt=<SPT>
  *   - Bearer token:  Authorization: Bearer <SPT>
+ *
+ * Auto-renew header response:
+ *   - X-Soulprint-Token-Renewed: <nuevo_spt>     (solo cuando se renovó)
+ *   - X-Soulprint-Expires-In: <segundos>         (tiempo restante del nuevo token)
  */
-export function soulprint(opts: SoulprintOptions = {}) {
-  return function soulprintMiddleware(req: any, res: any, next: Function) {
+
+export interface SoulprintMiddlewareOptions extends SoulprintOptions {
+  /**
+   * URL del nodo validador para auto-renew.
+   * Si no se provee, el auto-renew está desactivado.
+   * Ejemplo: "https://validator.soulprint.digital"
+   */
+  nodeUrl?:    string;
+  /** Timeout para la petición de renew. Default: 5000ms */
+  renewTimeoutMs?: number;
+}
+
+export function soulprint(opts: SoulprintMiddlewareOptions = {}) {
+  return async function soulprintMiddleware(req: any, res: any, next: Function) {
     const spt = extractSPT(req);
-    const result = verifySPT(spt, opts);
+
+    // ── Auto-renew preemptivo ────────────────────────────────────────────
+    // Si el token está próximo a expirar y hay nodeUrl → intentar renovar
+    let activeSpt = spt;
+    if (spt && opts.nodeUrl) {
+      const check = needsRenewal(spt);
+      if (check.needsRenew) {
+        const renewal = await autoRenew(spt, {
+          nodeUrl:   opts.nodeUrl,
+          timeoutMs: opts.renewTimeoutMs ?? 5_000,
+        });
+        if (renewal.renewed && renewal.spt !== activeSpt) {
+          activeSpt = renewal.spt;
+          // Entregar nuevo token al cliente via header
+          res.setHeader("X-Soulprint-Token-Renewed", renewal.spt);
+          res.setHeader("X-Soulprint-Expires-In",    String(renewal.expiresIn ?? 86400));
+          res.setHeader("X-Soulprint-Renew-Method",  "auto");
+        }
+      }
+    }
+
+    const result = verifySPT(activeSpt, opts);
 
     if (!result.allowed) {
       opts.onRejected?.(result.reason!);
@@ -45,88 +81,30 @@ export function soulprint(opts: SoulprintOptions = {}) {
         error:   "soulprint_required",
         message: opts.rejectMessage ?? result.reason,
         docs:    "https://github.com/manuelariasfz/soulprint",
-        required: {
-          minScore: opts.minScore ?? 40,
-          require:  opts.require,
-        },
+        hint:    opts.nodeUrl
+          ? "Auto-renew activado — verifica que el token no tenga más de 7 días de expirado"
+          : "Configura nodeUrl en el middleware para habilitar auto-renew",
+        required: { minScore: opts.minScore ?? 40, require: opts.require },
       });
       return;
     }
 
     opts.onVerified?.(result.token!);
-
-    // Attach to req for downstream handlers
     req.soulprint = result.token;
     next();
   };
 }
 
 function extractSPT(req: any): string | undefined {
-  // 1. Header dedicado
   const header = req.headers?.["x-soulprint"] ?? req.headers?.["X-Soulprint"];
   if (header) return header;
 
-  // 2. Authorization: Bearer <SPT>
   const auth = req.headers?.authorization ?? "";
   if (auth.startsWith("Bearer ")) {
     const token = auth.slice(7);
-    // Solo si parece un SPT (base64url largo) — no interferir con JWTs normales
     if (token.length > 200) return token;
   }
 
-  // 3. Query param: ?spt=...
   if (req.query?.spt) return req.query.spt;
-
   return undefined;
 }
-
-// ── Fastify Plugin ────────────────────────────────────────────────────────────
-
-/**
- * soulprintFastify() — Fastify plugin for Soulprint verification.
- *
- * USAGE:
- *
- * ```typescript
- * import Fastify from "fastify";
- * import { soulprintFastify } from "soulprint-express";
- *
- * const fastify = Fastify();
- * await fastify.register(soulprintFastify, { minScore: 60 });
- *
- * fastify.get("/me", async (request) => {
- *   const identity = request.soulprint;
- *   return { nullifier: identity?.nullifier };
- * });
- * ```
- */
-export async function soulprintFastify(fastify: any, opts: SoulprintOptions = {}) {
-  fastify.addHook("preHandler", async (request: any, reply: any) => {
-    const spt    = extractSPT(request);
-    const result = verifySPT(spt, opts);
-
-    if (!result.allowed) {
-      opts.onRejected?.(result.reason!);
-      reply.status(403).send({
-        error:    "soulprint_required",
-        message:  opts.rejectMessage ?? result.reason,
-        docs:     "https://github.com/manuelariasfz/soulprint",
-      });
-      return;
-    }
-
-    opts.onVerified?.(result.token!);
-    request.soulprint = result.token;
-  });
-}
-
-// ── Type augmentation for Express Request ─────────────────────────────────────
-declare global {
-  namespace Express {
-    interface Request {
-      soulprint?: SoulprintToken;
-    }
-  }
-}
-
-export { decodeToken, SoulprintToken, TrustLevel, CredentialType } from "soulprint-core";

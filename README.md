@@ -535,6 +535,79 @@ npx -y mcp-colombia-hub
 
 ---
 
+
+### Phase 5f — Auto-Renewal of SPT (v0.3.6) ✅
+
+SPTs (Soulprint Protocol Tokens) now renew automatically — no more downtime when a 24-hour token expires.
+
+#### How it works
+
+```
+[Bot SDK] ──detects near-expiry──► POST /token/renew ──► [Validator Node]
+                                        ↑ current SPT           ↓ fresh SPT (24h)
+[Middleware] ◄─── X-Soulprint-Token-Renewed: <new_spt> ─────────┘
+```
+
+**Renewal windows:**
+| Scenario | Window | Action |
+|---|---|---|
+| Token valid, < 1h remaining | Pre-emptive | Auto-renew |
+| Token expired < 7 days ago | Grace period | Auto-renew |
+| Token expired > 7 days ago | Stale | Full re-verification required |
+
+#### Validator endpoint
+
+```bash
+POST /token/renew
+Body: { "spt": "<current_token>" }
+
+Response 200: {
+  "spt": "<new_token>",
+  "expires_in": 86400,
+  "renewed": true,
+  "method": "preemptive" | "grace_window"
+}
+```
+
+#### Express middleware (automatic)
+
+```typescript
+import { soulprint } from "soulprint-express";
+
+app.use(soulprint({
+  minScore: 40,
+  nodeUrl: "https://validator.soulprint.digital",  // enables auto-renew
+}));
+
+// New token arrives in response header if renewed:
+// X-Soulprint-Token-Renewed: <new_spt>
+// X-Soulprint-Expires-In: 86400
+```
+
+#### MCP middleware (automatic)
+
+```typescript
+import { requireSoulprint } from "soulprint-mcp";
+
+server.use(requireSoulprint({
+  minScore: 65,
+  nodeUrl: "https://validator.soulprint.digital",
+}));
+// Renewed token propagated in context.meta["x-soulprint-token-renewed"]
+```
+
+#### Manual (any SDK)
+
+```typescript
+import { autoRenew, needsRenewal } from "soulprint-core";
+
+const check = needsRenewal(currentSpt);
+if (check.needsRenew) {
+  const { spt, renewed } = await autoRenew(currentSpt, { nodeUrl });
+  if (renewed) saveSpt(spt);  // persist the new token
+}
+```
+
 ## Protocol Spec
 
 See [specs/SIP-v0.1.md](specs/SIP-v0.1.md) for the Soulprint Identity Protocol specification.

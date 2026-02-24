@@ -1,6 +1,6 @@
 {
   "name": "soulprint-core",
-  "version": "0.1.8",
+  "version": "0.1.10",
   "description": "Soulprint core — DID keypairs, SPT tokens, Ed25519 signatures, trust scoring",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
