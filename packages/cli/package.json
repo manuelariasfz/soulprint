@@ -1,0 +1,16 @@
+{
+  "name": "@soulprint/cli",
+  "version": "0.1.0",
+  "description": "Soulprint CLI — npx soulprint verify-me",
+  "bin": { "soulprint": "dist/index.js" },
+  "main": "dist/index.js",
+  "scripts": { "build": "tsc" },
+  "dependencies": {
+    "@soulprint/core":        "workspace:*",
+    "@soulprint/verify-local":"workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "@types/node": "^20.0.0"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "soulprint",
+  "private": true,
+  "workspaces": ["packages/*", "apps/*"],
+  "scripts": {
+    "build":   "pnpm -r build",
+    "test":    "pnpm -r test",
+    "dev":     "pnpm -r --parallel dev",
+    "clean":   "pnpm -r exec rm -rf dist node_modules"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "@types/node": "^20.0.0"
+  },
+  "engines": { "node": ">=18.0.0" }
+}
