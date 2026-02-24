@@ -33,24 +33,26 @@ C4Context
 
   Person(human, "Human Principal", "Person who owns and\ncontrols the AI bot")
   Person(devOps, "Service Operator", "Developer running a\nverified MCP/REST service")
+  Person(nodeOp, "Node Operator", "Anyone running a\nSoulprint validator node")
 
   System_Boundary(sp, "Soulprint") {
-    System(soulprint, "Soulprint Protocol", "Decentralized KYC identity\nfor AI agents. ZK proofs,\nreputation, P2P validators.")
+    System(soulprint, "Soulprint Protocol", "Decentralized KYC identity\nfor AI agents. ZK proofs,\nreputation, libp2p P2P validators.")
   }
 
-  System_Ext(validatorNet, "Validator Network", "P2P HTTP nodes storing\nnullifiers and reputation.\nAnyone can run a node.")
-  System_Ext(services, "Verified Services", "MCP servers, REST APIs\nusing soulprint-mcp or\nsoulprint-express (e.g. mcp-colombia-hub)")
-  System_Ext(aiBot, "AI Bot / Agent", "Claude, GPT, AutoGPT, etc.\nOperates on behalf of\nthe human principal")
-  System_Ext(localML, "Local ML Models", "Tesseract OCR + InsightFace.\nOn-demand, killed after use.\nNo data leaves device.")
+  System_Ext(validatorNet, "Validator Network (libp2p)", "Mesh P2P de nodos HTTP+libp2p.\nKademlia DHT + GossipSub.\nAuto-discovery via mDNS.\nAnyone can run a node.")
+  System_Ext(services, "Verified Services", "MCP servers, REST APIs\nusando soulprint-mcp o\nsoulprint-express (e.g. mcp-colombia-hub)")
+  System_Ext(aiBot, "AI Bot / Agent", "Claude, GPT, AutoGPT, etc.\nOpera en nombre del\nhumano principal")
+  System_Ext(localML, "Local ML Models", "Tesseract OCR + InsightFace.\nOn-demand, killed after use.\nNada sale del dispositivo.")
 
-  Rel(human, soulprint, "Verifies identity once", "CLI: npx soulprint verify-me")
+  Rel(human, soulprint, "Verifica identidad una vez", "CLI: npx soulprint verify-me")
   Rel(soulprint, localML, "OCR + face match", "Python subprocess, local only")
   Rel(soulprint, validatorNet, "Broadcast nullifier + ZK proof", "HTTP POST /verify")
-  Rel(aiBot, services, "Calls tools with SPT token", "MCP / HTTP + X-Soulprint header")
-  Rel(services, soulprint, "Verify token + issue attestations", "soulprint-mcp / soulprint-express")
-  Rel(services, validatorNet, "Submit behavioral attestations", "HTTP POST /reputation/attest")
-  Rel(validatorNet, validatorNet, "Gossip attestations P2P", "HTTP fire-and-forget")
-  Rel(devOps, soulprint, "Protects API with middleware", "npm i soulprint-mcp")
+  Rel(aiBot, services, "Llama tools con SPT token", "MCP / HTTP + X-Soulprint header")
+  Rel(services, soulprint, "Verifica token + emite attestations", "soulprint-mcp / soulprint-express")
+  Rel(services, validatorNet, "Envía attestations de comportamiento", "HTTP POST /reputation/attest")
+  Rel(validatorNet, validatorNet, "Gossip P2P attestations", "libp2p GossipSub (+ HTTP fallback)")
+  Rel(nodeOp, soulprint, "Levanta nodo validador", "npx soulprint node")
+  Rel(devOps, soulprint, "Protege API con middleware", "npm i soulprint-mcp")
 
   UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="1")
 ```
@@ -63,10 +65,11 @@ C4Context
 
 ```mermaid
 C4Container
-  title Container Diagram — Soulprint v0.1.3
+  title Container Diagram — Soulprint v0.2.0
 
-  Person(human, "Human Principal", "Runs CLI to verify identity")
-  Person(bot, "AI Bot", "Includes SPT in tool calls")
+  Person(human, "Human Principal", "Corre CLI para verificar identidad")
+  Person(bot, "AI Bot", "Incluye SPT en tool calls")
+  Person(nodeOp, "Node Operator", "Levanta un nodo validador")
 
   System_Boundary(sp, "Soulprint") {
 
@@ -82,8 +85,11 @@ C4Container
     Container(zkp, "soulprint-zkp", "TypeScript + Circom",
       "Circom 2.1.8 circuit (844 constraints)\nsnarkjs Groth16 prover/verifier\nProof: ~564ms · Verify: ~25ms")
 
-    Container(network, "soulprint-network", "Node.js HTTP",
-      "Validator node REST API\nReputation store · Sybil registry\nP2P gossip · Rate limiting")
+    Container(httpNode, "soulprint-network (HTTP)", "Node.js HTTP server",
+      "Validator REST API (port 4888)\nZK verify · Nullifier registry\nReputation store · Rate limiting\nBootstrap de nodos legacy")
+
+    Container(p2pNode, "soulprint-network (P2P)", "libp2p Node.js",
+      "Puerto 6888 — libp2p v2.10\nKademlia DHT (peer discovery)\nGossipSub (attestation broadcast)\nmDNS (LAN auto-discovery)\nTCP + Noise + Yamux + Ping\nBootstrap via SOULPRINT_BOOTSTRAP")
 
     Container(mcp, "soulprint-mcp", "TypeScript",
       "MCP server middleware (3 lines)\nCapabilities-based token extraction\nScore-gated tool access")
@@ -95,22 +101,27 @@ C4Container
       "~/.soulprint/keypair.json\n~/.soulprint/token.spt\n~/.soulprint/node/reputation.json\n~/.soulprint/node/nullifiers.json\n~/.soulprint/node/peers.json")
   }
 
-  System_Ext(validatorNet, "Validator Network", "Other soulprint-network nodes")
+  System_Ext(validatorNet, "Otros nodos Soulprint", "HTTP + libp2p peers")
 
-  Rel(human, cli, "Runs verification", "stdio")
+  Rel(human, cli, "Corre verificación", "stdio")
+  Rel(nodeOp, httpNode, "Arranca nodo", "npx soulprint node")
   Rel(cli, verify, "OCR + face match", "TypeScript import")
-  Rel(cli, zkp, "Generate ZK proof", "TypeScript import")
-  Rel(cli, core, "Issue SPT token", "TypeScript import")
-  Rel(cli, network, "Start validator node", "TypeScript import")
-  Rel(verify, fs, "Read/write keys", "Node.js fs")
-  Rel(core, fs, "Persist keypair + token", "Node.js fs")
-  Rel(network, fs, "Persist reputation + peers", "Node.js fs")
-  Rel(network, validatorNet, "Gossip attestations", "HTTP fire-and-forget")
-  Rel(bot, mcp, "Calls with SPT in capabilities", "MCP protocol")
-  Rel(bot, express, "Calls with X-Soulprint header", "HTTP")
-  Rel(mcp, core, "Verify token + extract ctx", "TypeScript import")
-  Rel(express, core, "Verify token + extract ctx", "TypeScript import")
-  Rel(mcp, network, "Submit attestations", "HTTP POST /reputation/attest")
+  Rel(cli, zkp, "Genera ZK proof", "TypeScript import")
+  Rel(cli, core, "Emite SPT token", "TypeScript import")
+  Rel(cli, httpNode, "Inicia HTTP validator", "TypeScript import")
+  Rel(cli, p2pNode, "Inicia P2P node", "TypeScript import")
+  Rel(httpNode, p2pNode, "setP2PNode() — integración", "mismo proceso")
+  Rel(verify, fs, "Lee/escribe keypair", "Node.js fs")
+  Rel(core, fs, "Persiste keypair + token", "Node.js fs")
+  Rel(httpNode, fs, "Persiste reputación + peers", "Node.js fs")
+  Rel(p2pNode, validatorNet, "Gossip attestations", "libp2p GossipSub")
+  Rel(p2pNode, validatorNet, "Descubre peers", "Kademlia DHT + mDNS")
+  Rel(httpNode, validatorNet, "Gossip fallback (nodos legacy)", "HTTP fire-and-forget")
+  Rel(bot, mcp, "Llama con SPT en capabilities", "MCP protocol")
+  Rel(bot, express, "Llama con X-Soulprint header", "HTTP")
+  Rel(mcp, core, "Verifica token + extrae ctx", "TypeScript import")
+  Rel(express, core, "Verifica token + extrae ctx", "TypeScript import")
+  Rel(mcp, httpNode, "Envía attestations", "HTTP POST /reputation/attest")
 
   UpdateLayoutConfig($c4ShapeInRow="4", $c4BoundaryInRow="1")
 ```
@@ -175,50 +186,97 @@ C4Component
 
 ---
 
-## C4 — Level 3: Components — soulprint-network
+## C4 — Level 3: Components — soulprint-network (HTTP)
 
-> El nodo validador: cómo guarda y propaga la reputación.
+> El nodo validador HTTP: cómo guarda y propaga la reputación.
 
 ```mermaid
 C4Component
-  title Component Diagram — soulprint-network (Validator Node)
+  title Component Diagram — soulprint-network / HTTP Validator (validator.ts)
 
-  Container_Boundary(net, "soulprint-network") {
+  Container_Boundary(net, "soulprint-network — HTTP Layer") {
 
-    Component(api, "REST API", "node.ts · Express",
-      "GET  /health\nPOST /verify\nGET  /reputation/:did\nPOST /reputation/attest\nPOST /peers/register\nGET  /peers")
+    Component(api, "REST API", "validator.ts · Node.js http",
+      "GET  /health\nPOST /verify\nGET  /reputation/:did\nPOST /reputation/attest\nPOST /peers/register\nGET  /peers\nGET  /info (incluye p2p stats)")
 
-    Component(repStore, "Reputation Store", "reputation.ts",
-      "loadReputation() / saveReputation()\ngetReputation(did) → BotReputation\napplyAttestation(att)\nMap<DID → { score, attestations[], last_updated }>")
+    Component(p2pBridge, "P2P Bridge", "validator.ts",
+      "setP2PNode(node):\n  inyecta libp2p node\n  suscribe a TOPIC_ATTESTATIONS\n  handler: verifyAttestation → applyAttestation\ngossipAttestation() dual-channel:\n  1. publishAttestationP2P() ← GossipSub\n  2. HTTP fire-and-forget ← fallback legacy")
 
-    Component(sybil, "Sybil Registry", "sybil.ts",
-      "registerNullifier(nullifier, did)\ncheckNullifier(nullifier) → did | null\nEnforces: 1 nullifier = 1 DID\nPrevents same person registering twice")
+    Component(repStore, "Reputation Store", "validator.ts",
+      "loadReputation() / saveReputation()\ngetReputation(did) → BotReputation\napplyAttestation(att) + anti-replay\nMap<DID → { score, attestations[], last_updated }>")
 
-    Component(gossip, "P2P Gossip", "gossip.ts",
-      "gossipAttestation(att, origin)\nFetch peers from peers.json\nPOST att to each peer (fire-and-forget)\nSkip origin peer (anti-echo)\nX-Gossip:1 header = no re-gossip")
+    Component(sybil, "Sybil Registry", "validator.ts",
+      "registerNullifier(nullifier, did)\ncheckNullifier(nullifier) → did | null\n1 nullifier = 1 DID\nPreviene registro doble")
 
-    Component(peerMgr, "Peer Manager", "peers.ts",
-      "registerPeer(url)\ngetPeers() → string[]\nloadPeers() / savePeers()\nstored at ~/.soulprint/node/peers.json")
+    Component(peerMgr, "Peer Manager (legacy)", "validator.ts",
+      "peers.json — nodos HTTP legacy\nregistrarPeer(url) · getPeers()\nusado como fallback cuando\nel peer no tiene libp2p")
 
-    Component(rateLimit, "Rate Limiter", "middleware.ts",
-      "/attest   → 10 req/min/IP\n/verify   → 30 req/min/IP\n/reputation → 60 req/min/IP\nexpress-rate-limit")
+    Component(rateLimit, "Rate Limiter", "validator.ts",
+      "/attest   → 10 req/min/IP\n/verify   → 30 req/min/IP\nMap<IP → { count, resetAt }>\nauto-cleanup cada 5 min")
   }
 
-  Container_Ext(peers, "Peer Nodes", "", "Other soulprint-network instances")
+  Container(p2pNode, "soulprint-network (P2P)", "", "")
   Container(core, "soulprint-core", "", "")
   ContainerDb(fs, "Filesystem", "JSON", "~/.soulprint/node/")
 
-  Rel(api, rateLimit, "All routes protected", "Express middleware")
-  Rel(api, repStore, "Query/update reputation", "")
-  Rel(api, sybil, "Check on /verify", "")
-  Rel(api, gossip, "Trigger on /attest", "")
-  Rel(api, peerMgr, "Read/write on /peers", "")
+  Rel(api, rateLimit, "Todas las rutas protegidas", "")
+  Rel(api, repStore, "Query/update reputación", "")
+  Rel(api, sybil, "Check en /verify", "")
+  Rel(api, p2pBridge, "gossipAttestation() en /attest", "")
+  Rel(api, peerMgr, "Lee peers en /peers/register", "")
+  Rel(p2pBridge, p2pNode, "publishAttestationP2P()", "GossipSub")
+  Rel(p2pBridge, peerMgr, "HTTP fallback a peers legacy", "")
   Rel(repStore, core, "verifyAttestation()", "")
   Rel(repStore, fs, "reputation.json", "")
   Rel(sybil, fs, "nullifiers.json", "")
   Rel(peerMgr, fs, "peers.json", "")
-  Rel(gossip, peerMgr, "Fetch peer list", "")
-  Rel(gossip, peers, "HTTP POST /reputation/attest", "fire-and-forget")
+
+  UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="1")
+```
+
+---
+
+## C4 — Level 3: Components — soulprint-network (P2P)
+
+> La capa libp2p: cómo los nodos se descubren y propagan attestations.
+
+```mermaid
+C4Component
+  title Component Diagram — soulprint-network / P2P Layer (p2p.ts) — Fase 5
+
+  Container_Boundary(p2p, "soulprint-network — P2P Layer (libp2p v2.10)") {
+
+    Component(nodeFactory, "Node Factory", "p2p.ts · createSoulprintP2PNode()",
+      "Crea nodo libp2p con:\n  TCP transport (port 6888)\n  Noise encryption\n  Yamux multiplexing\nArranca + suscribe a topics\nDevuelve SoulprintP2PNode")
+
+    Component(transport, "Transport Stack", "libp2p internals",
+      "@libp2p/tcp — conexiones TCP\n@chainsafe/libp2p-noise — E2E encryption\n@chainsafe/libp2p-yamux — stream muxing\n@libp2p/ping — health checks (req. KadDHT)")
+
+    Component(kademlia, "Kademlia DHT", "@libp2p/kad-dht",
+      "clientMode: false (servidor)\nPeer routing y peer discovery\nXOR metric distance routing\nAuto-refresh de routing table\nPeer ID: 12D3KooW... (Ed25519)")
+
+    Component(gossipSub, "GossipSub", "@chainsafe/libp2p-gossipsub",
+      "Topic: soulprint:attestations:v1\nTopic: soulprint:nullifiers:v1\nallowPublishToZeroTopicPeers: true\nScore thresholds permisivos\n(redes pequeñas / bootstrap)")
+
+    Component(discovery, "Peer Discovery", "multi-source",
+      "@libp2p/mdns — LAN auto-discovery\n  (zero config, funciona offline)\n@libp2p/bootstrap — configurable\n  SOULPRINT_BOOTSTRAP=multiaddrs\n@libp2p/identify — intercambio\n  de protocolos y addresses")
+
+    Component(pubsubApi, "PubSub API", "p2p.ts helpers",
+      "publishAttestationP2P(node, att):\n  fromString(JSON.stringify(att))\n  pubsub.publish(TOPIC, data)\n  retorna recipients count\n\nonAttestationReceived(node, handler):\n  addEventListener('message')\n  parse + validate + callback\n\ngetP2PStats(node):\n  peerId, peers, multiaddrs, pubsubPeers\n\nstopP2PNode(node): graceful stop")
+  }
+
+  Container(httpBridge, "soulprint-network (HTTP)", "", "")
+  System_Ext(peers, "Otros nodos Soulprint", "", "Mesh P2P global")
+
+  Rel(nodeFactory, transport, "Configura transports", "")
+  Rel(nodeFactory, kademlia, "services.dht = kadDHT()", "")
+  Rel(nodeFactory, gossipSub, "services.pubsub = gossipsub()", "")
+  Rel(nodeFactory, discovery, "peerDiscovery: [mdns(), bootstrap()]", "")
+  Rel(gossipSub, pubsubApi, "expuesto via helpers", "")
+  Rel(pubsubApi, httpBridge, "onAttestationReceived → applyAttestation()", "")
+  Rel(gossipSub, peers, "GossipSub mesh", "libp2p TCP")
+  Rel(kademlia, peers, "DHT routing table", "libp2p TCP")
+  Rel(discovery, peers, "mDNS multicast / Bootstrap dial", "UDP / TCP")
 
   UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="1")
 ```
@@ -383,25 +441,68 @@ Identity (80) + Reputation (17) = 97  →  PREMIUM desbloqueado
 
 ## P2P Gossip Protocol
 
+> Fase 5 — libp2p GossipSub + Kademlia DHT (soulprint-network@0.2.0)
+
+### Arquitectura dual-channel
+
 ```
-Nodo A recibe attestation válida
+attestation nueva en un nodo
     │
-    ├─▶ Almacena localmente en reputation.json
+    ├──▶ Canal 1: libp2p GossipSub (primario)
+    │     publishAttestationP2P(node, att)
+    │     → serialize: JSON → Uint8Array
+    │     → pubsub.publish("soulprint:attestations:v1", data)
+    │     → GossipSub distribuye a todos los subscribers
+    │     → cada receptor: verifyAttestation() → applyAttestation()
     │
-    ├─▶ Obtiene peers[] de peers.json
-    │
-    └─▶ Para cada peer ≠ origin (en paralelo):
+    └──▶ Canal 2: HTTP fire-and-forget (fallback nodos legacy)
           POST {peer}/reputation/attest
           headers: { "X-Gossip": "1" }
-          body: { attestation }
-          timeout: 3000ms
-          catch: ignorar (fire-and-forget)
+          timeout: 3000ms · catch: ignorar
+```
 
-Anti-loop:   si X-Gossip: "1" presente → almacenar, NO re-gossipear
-Anti-replay: duplicados (issuer_did, timestamp, context) ignorados
-Convergencia: todos los nodos sincronizan en segundos (red pequeña)
+### Flujo de descubrimiento de peers
 
-Roadmap Fase 5: reemplazar HTTP gossip con libp2p DHT (Kademlia)
+```
+Nodo arranca (npx soulprint node)
+    │
+    ├──▶ mDNS broadcast en LAN (zero config — funciona offline)
+    │
+    ├──▶ Bootstrap dial (si SOULPRINT_BOOTSTRAP env var configurada)
+    │     → conecta a multiaddrs conocidas
+    │     → intercambia routing table via KadDHT
+    │
+    └──▶ Kademlia DHT (mantenimiento continuo)
+          → FIND_NODE queries (XOR metric distance)
+          → routing table actualizada periódicamente
+
+Peer ID: 12D3KooW... (Ed25519 multihash)
+Multiaddr: /ip4/x.x.x.x/tcp/6888/p2p/12D3KooW...
+```
+
+### Topics PubSub
+
+| Topic | Uso |
+|---|---|
+| `soulprint:attestations:v1` | Broadcast de BotAttestations |
+| `soulprint:nullifiers:v1` | Reservado — anti-Sybil futuro |
+
+### Anti-loop y anti-replay
+
+```
+GossipSub maneja anti-loop nativamente (message-id único por mensaje)
+Anti-replay en applyAttestation(): dedup (issuer_did, timestamp, context)
+Mismo mensaje llegando por P2P y por HTTP → solo se aplica una vez
+```
+
+### Stack libp2p (interface@2.x)
+
+```
+libp2p@2.10.0
+├── @libp2p/tcp@10.1.19 · @chainsafe/libp2p-noise@16.1.5 · @chainsafe/libp2p-yamux@7.0.4
+├── @libp2p/kad-dht@16.1.3 · @chainsafe/libp2p-gossipsub@14.1.2
+├── @libp2p/mdns@11.0.47 · @libp2p/bootstrap@11.0.47
+└── @libp2p/identify@3.0.39 · @libp2p/ping@2.0.37
 ```
 
 ---
@@ -535,15 +636,16 @@ soulprint/
 │   │   ├── circuits/            soulprint_identity.circom (844 constraints)
 │   │   └── keys/                *.zkey · verification_key.json
 │   ├── network/src/
-│   │   ├── node.ts              HTTP server (Express)
-│   │   ├── gossip.ts            P2P fire-and-forget
-│   │   └── sybil.ts             nullifier registry
+│   │   ├── server.ts            Entrypoint: arranca HTTP + P2P en mismo proceso
+│   │   ├── validator.ts         HTTP server + setP2PNode() bridge + gossip dual-channel
+│   │   └── p2p.ts               libp2p node (Fase 5): KadDHT + GossipSub + mDNS
 │   ├── mcp/src/middleware.ts    soulprint() MCP plugin
 │   └── express/src/middleware.ts soulprint() Express plugin
 ├── tests/
 │   ├── suite.js                 104 unit + integration
 │   ├── pentest-node.js          15 HTTP pen tests
-│   └── zk-tests.js              16 ZK proof tests
+│   ├── zk-tests.js              16 ZK proof tests
+│   └── p2p-tests.mjs            22 P2P tests (Fase 5): conectividad, GossipSub, 3 nodos, burst
 ├── specs/SIP-v0.1.md            Formal protocol spec
 ├── website/index.html           Landing page (GitHub Pages)
 ├── ARCHITECTURE.md              ← este archivo
@@ -552,4 +654,4 @@ soulprint/
 
 ---
 
-*v0.1.3 — Febrero 2026 · https://github.com/manuelariasfz/soulprint*
+*v0.2.0 — Febrero 2026 · https://github.com/manuelariasfz/soulprint*

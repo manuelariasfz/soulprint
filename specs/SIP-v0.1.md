@@ -145,7 +145,9 @@ Guards:
 
 Side effects:
   store attestation locally
-  gossip to all known peers (X-Gossip: 1 header, no re-gossip)
+  gossip dual-channel:
+    1. libp2p GossipSub (soulprint:attestations:v1) — primary
+    2. HTTP fire-and-forget to HTTP peers — fallback for legacy nodes
 ```
 
 ### Anti-Sybil for reputation
@@ -164,6 +166,60 @@ A low-reputation bot cannot recover by creating a new DID — the new DID starts
 6. **Reputation gaming**: only services with score ≥ 60 can issue attestations; max score clamped at 20
 7. **Attestation forgery**: Ed25519 sig bound to issuer_did; tampered attestations always fail verification
 
+## P2P Network Extension (v0.2.0 — Fase 5)
+
+### Overview
+
+Each validator node now runs a dual-stack: HTTP (port 4888) + libp2p (port 6888).
+
+```
+Gossip channel priority:
+  1. libp2p GossipSub  — primary, internet-wide
+  2. HTTP fire-and-forget — fallback for legacy nodes
+```
+
+### libp2p Stack
+
+| Component | Package | Role |
+|---|---|---|
+| Transport | `@libp2p/tcp` | TCP connections |
+| Encryption | `@chainsafe/libp2p-noise` | Noise protocol (E2E) |
+| Muxing | `@chainsafe/libp2p-yamux` | Stream multiplexing |
+| DHT | `@libp2p/kad-dht` | Kademlia peer routing |
+| PubSub | `@chainsafe/libp2p-gossipsub` | Attestation broadcast |
+| Discovery | `@libp2p/mdns` | LAN auto-discovery |
+| Bootstrap | `@libp2p/bootstrap` | Internet entry points |
+
+### PubSub Topics
+
+```
+soulprint:attestations:v1  — BotAttestation JSON messages
+soulprint:nullifiers:v1    — reserved (future anti-Sybil)
+```
+
+### Peer Discovery
+
+```
+1. mDNS (zero config) — discovers nodes on same LAN automatically
+2. Bootstrap (SOULPRINT_BOOTSTRAP env var) — internet entry points
+3. Kademlia DHT — routing table maintained continuously
+```
+
+### Node Identity
+
+Each node generates a persistent Ed25519 keypair at startup:
+- Stored at `~/.soulprint/node/node-identity.json`
+- Peer ID derived from public key (multihash format: `12D3KooW...`)
+- Multiaddr: `/ip4/<ip>/tcp/<p2p-port>/p2p/<peer-id>`
+
+### Anti-loop (GossipSub native)
+
+GossipSub maintains a `seen-messages` cache per `message-id`. Unlike the HTTP
+gossip which uses `X-Gossip: 1` headers, GossipSub never re-forwards a message
+it has already seen — this is guaranteed by the protocol.
+
+---
+
 ## Implementations
 
 - **Reference (TypeScript)**: https://github.com/manuelariasfz/soulprint
@@ -174,7 +230,7 @@ A low-reputation bot cannot recover by creating a new DID — the new DID starts
 
 ## Status
 
-**Draft — v0.1.3**. Phases 1–4 complete (local verify, ZK proofs, validator nodes, SDKs + bot reputation).  
-Phase 5 (libp2p P2P) and Phase 6 (multi-country expansion) in progress.
+**Draft — v0.2.0**. Phases 1–5 complete.  
+Phase 6 (multi-country expansion) in progress.
 
 Feedback welcome: open an issue at https://github.com/manuelariasfz/soulprint/issues

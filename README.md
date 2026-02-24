@@ -7,8 +7,8 @@ Soulprint lets any AI bot prove there's a verified human behind it — without r
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [[![npm soulprint](https://img.shields.io/npm/v/soulprint?label=soulprint&color=blue)](https://npmjs.com/package/soulprint)
 [![npm soulprint-mcp](https://img.shields.io/npm/v/soulprint-mcp?label=soulprint-mcp&color=purple)](https://npmjs.com/package/soulprint-mcp)
-![Phase](https://img.shields.io/badge/v0.1.3-phases%201--4%20complete-brightgreen)]()
-[![Built with](https://img.shields.io/badge/built%20with-Circom%20%2B%20snarkjs%20%2B%20InsightFace-purple)]()
+![Phase](https://img.shields.io/badge/v0.2.0-phases%201--5%20complete-brightgreen)]()
+[![npm soulprint-network](https://img.shields.io/npm/v/soulprint-network?label=soulprint-network&color=7c6cf5)](https://npmjs.com/package/soulprint-network)[![Built with](https://img.shields.io/badge/built%20with-Circom%20%2B%20snarkjs%20%2B%20InsightFace-purple)]()
 
 ---
 
@@ -159,21 +159,37 @@ fastify.get("/me", async (request) => ({
 
 ## Run a Validator Node
 
-Anyone can run a validator node. Nodes verify ZK proofs and maintain an anti-Sybil registry. No special hardware needed — any machine can be a node.
+Anyone can run a validator node. Each node runs **two stacks simultaneously**: HTTP (port 4888) + libp2p P2P (port 6888).
 
 ```bash
-# Run locally
-npx soulprint node --port 4888
+# Arranque simple — mDNS descubre nodos en la misma LAN automáticamente
+npx soulprint node
 
-# Or as a background service
-SOULPRINT_PORT=4888 node dist/server.js &
+# Con bootstrap nodes para conectar a la red global
+SOULPRINT_BOOTSTRAP=/ip4/x.x.x.x/tcp/6888/p2p/12D3KooW... \
+npx soulprint node
+```
+
+Output esperado:
+```
+🌐 Soulprint Validator Node v0.2.0
+   Node DID:     did:key:z6Mk...
+   Listening:    http://0.0.0.0:4888
+
+🔗 P2P activo
+   Peer ID:    12D3KooW...
+   Multiaddrs: /ip4/x.x.x.x/tcp/6888/p2p/12D3KooW...
+   Gossip:     HTTP fallback + GossipSub P2P
+   Discovery:  mDNS (+ DHT si hay bootstraps)
 ```
 
 Node API:
 ```
-GET  /info              — node info (DID, version, stats)
+GET  /info              — node info + p2p stats (peer_id, peers, multiaddrs)
 POST /verify            — verify ZK proof + co-sign SPT
-GET  /nullifier/:hash   — check if nullifier is registered (anti-Sybil)
+POST /reputation/attest — issue +1/-1 attestation (propagado via GossipSub)
+GET  /reputation/:did   — get bot reputation
+GET  /nullifier/:hash   — check anti-Sybil registry
 ```
 
 ---
@@ -393,7 +409,7 @@ interface BotAttestation {
 
 **Only services with score ≥ 60 can issue attestations.** This prevents low-quality services from gaming the network.
 
-Attestations propagate **P2P across all validator nodes** via fire-and-forget gossip (anti-replay included).
+Attestations propagate **P2P across all validator nodes** via libp2p GossipSub (with HTTP fallback for legacy nodes).
 
 ---
 
@@ -433,7 +449,7 @@ npx -y mcp-colombia-hub
 ✅ Phase 2 — ZK proofs (Circom circuit + snarkjs prover/verifier)
 ✅ Phase 3 — Validator nodes (HTTP + ZK verify + anti-Sybil registry)
 ✅ Phase 4 — SDKs (soulprint-mcp, soulprint-express)
-🚧 Phase 5 — P2P network (libp2p DHT, multi-node consensus)
+✅ Phase 5 — P2P network (libp2p v2 · Kademlia DHT + GossipSub + mDNS · soulprint-network@0.2.0)
 🚧 Phase 6 — Multi-country support (passport, DNI, CURP, RUT...)
 🔮 Phase 7 — On-chain nullifier registry (optional, EVM-compatible)
 ```
