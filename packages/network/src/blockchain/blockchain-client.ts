@@ -123,7 +123,10 @@ export class SoulprintBlockchainClient {
    */
   async connect(): Promise<boolean> {
     try {
-      const { ethers } = await import("ethers");
+      // @ts-ignore — ethers is an optional peer dependency
+      const ethersModule = await import("ethers").catch(() => null);
+      if (!ethersModule) return false;
+      const ethers = ethersModule.ethers;
 
       this.provider = new ethers.JsonRpcProvider(this.config.rpcUrl);
       this.signer   = new ethers.Wallet(this.config.privateKey, this.provider);

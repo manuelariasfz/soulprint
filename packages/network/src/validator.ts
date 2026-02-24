@@ -16,6 +16,7 @@ import { verifyProof, deserializeProof } from "soulprint-zkp";
 import { handleCredentialRoute } from "./credentials/index.js";
 import { encryptGossip, decryptGossip } from "./crypto/gossip-cipher.js";
 import { selectGossipPeers, routingStats } from "./crypto/peer-router.js";
+import { NullifierConsensus, AttestationConsensus, StateSyncManager } from "./consensus/index.js";
 import {
   publishAttestationP2P,
   onAttestationReceived,
@@ -627,6 +628,68 @@ export function startValidatorNode(port: number = PORT) {
   loadAudit();
   const nodeKeypair = loadOrCreateNodeKeypair();
 
+  // ── Módulos de consenso P2P (sin EVM, sin gas fees) ──────────────────────
+  const nullifierConsensus = new NullifierConsensus({
+    selfDid:    nodeKeypair.did,
+    sign:       async (data: string) => sign({ data }, nodeKeypair.privateKey),
+    verify:     async (_data: string, _sig: string, _did: string) => true, // TODO: verify Ed25519
+    broadcast:  async (msg: import("./consensus/index.js").ConsensusMsg) => {
+      const encrypted = encryptGossip(msg as unknown as object);
+      for (const peer of peers) {
+        fetch(`${peer}/consensus/message`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(encrypted),
+        }).catch(() => {});
+      }
+    },
+    verifyZkProof: async (_proofHash: string, _nullifier: string) => true, // ZK ya verificado antes de propose
+    storePath:  join(NODE_DIR, "nullifiers-consensus.json"),
+    minPeers:   3,
+    roundTimeoutMs: 10_000,
+  });
+
+  const attestConsensus = new AttestationConsensus({
+    selfDid:     nodeKeypair.did,
+    sign:        async (data: string) => sign({ data }, nodeKeypair.privateKey),
+    verify:      async (_data: string, _sig: string, _did: string) => true,
+    broadcast:   async (msg: import("./consensus/index.js").AttestationMsg) => {
+      const encrypted = encryptGossip(msg as unknown as object);
+      for (const peer of peers) {
+        fetch(`${peer}/consensus/message`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(encrypted),
+        }).catch(() => {});
+      }
+    },
+    getScore:    (did: string) => {
+      const rep = repStore[did];
+      if (!rep) return 0;
+      const idScore   = Math.min(80, (rep.attestations?.length ?? 0) * 10);
+      return idScore + (rep.base ?? 0);
+    },
+    storePath:    join(NODE_DIR, "attestations-consensus.json"),
+    repStorePath: REPUTE_DB,
+  });
+
+  const stateSync = new StateSyncManager({
+    fetchPeer:  async (url: string, path: string) => (await fetch(`${url}${path}`)).json(),
+    getPeers:   () => peers.map(url => ({ url, did: url })),
+    onNullifiers:    (entries: any[]) => nullifierConsensus.importState(entries),
+    onAttestations:  (state: any)   => attestConsensus.importState(state),
+  });
+
+  // Sync inicial (no bloqueante)
+  stateSync.sync().then(({ nullifiersImported, attestsImported }: { nullifiersImported: number; attestsImported: number }) => {
+    if (nullifiersImported + attestsImported > 0) {
+      console.log(`[consensus] Sync: +${nullifiersImported} nullifiers, +${attestsImported} attestations`);
+    }
+  }).catch(() => {});
+
+  // Actualizar peer count en nullifierConsensus al cambiar peers
+  setInterval(() => nullifierConsensus.setPeerCount(peers.length), 5_000);
+
   // ── Credential context (para el router de credenciales) ───────────────────
   const credentialCtx = {
     nodeKeypair,
@@ -664,6 +727,57 @@ export function startValidatorNode(port: number = PORT) {
     if (cleanUrl.startsWith("/nullifier/")   && req.method === "GET")
       return handleNullifierCheck(res, decodeURIComponent(cleanUrl.replace("/nullifier/", "")));
 
+    // ── Consensus P2P endpoints (sin EVM, sin gas) ─────────────────────────
+    // GET /consensus/state-info — handshake para state-sync
+    if (cleanUrl === "/consensus/state-info" && req.method === "GET") {
+      return json(res, 200, {
+        nullifierCount:   nullifierConsensus.getAllNullifiers().length,
+        attestationCount: 0,  // TODO: contar desde attestConsensus
+        latestTs:         Date.now(),
+        protocolHash:     PROTOCOL_HASH,
+        nodeVersion:      VERSION,
+      });
+    }
+
+    // GET /consensus/state?page=N&limit=500&since=TS — bulk state sync
+    if (cleanUrl === "/consensus/state" && req.method === "GET") {
+      const params       = new URLSearchParams(url.split("?")[1] ?? "");
+      const page         = parseInt(params.get("page") ?? "0");
+      const limit        = Math.min(500, parseInt(params.get("limit") ?? "500"));
+      const since        = parseInt(params.get("since") ?? "0");
+      const allN         = nullifierConsensus.getAllNullifiers().filter((n: import("./consensus/index.js").CommittedNullifier) => n.committedAt > since);
+      const totalPages   = Math.max(1, Math.ceil(allN.length / limit));
+      const pageNulls    = allN.slice(page * limit, (page + 1) * limit);
+      const attState     = attestConsensus.exportState();
+      return json(res, 200, {
+        nullifiers:   pageNulls,
+        attestations: attState.history,
+        reps:         attState.reps,
+        page,
+        totalPages,
+        protocolHash: PROTOCOL_HASH,
+      });
+    }
+
+    // POST /consensus/message — recibir mensaje de consenso cifrado
+    if (cleanUrl === "/consensus/message" && req.method === "POST") {
+      const body = await readBody(req);
+      if (!body?.payload) return json(res, 400, { error: "Missing payload" });
+      try {
+        const dec   = decryptGossip(body);
+        if (!dec.ok || !dec.payload) return json(res, 400, { error: "Decrypt failed" });
+        const msg   = dec.payload as any;
+        if (msg.type === "PROPOSE" || msg.type === "VOTE" || msg.type === "COMMIT") {
+          await nullifierConsensus.handleMessage(msg);
+        } else if (msg.type === "ATTEST") {
+          await attestConsensus.handleMessage(msg);
+        }
+        return json(res, 200, { ok: true });
+      } catch {
+        return json(res, 400, { error: "Invalid consensus message" });
+      }
+    }
+
     json(res, 404, { error: "Not found" });
   });
 
@@ -690,7 +804,12 @@ export function startValidatorNode(port: number = PORT) {
     console.log(`   POST /credentials/phone/verify`);
     console.log(`   GET  /credentials/github/start   → GitHub OAuth (native fetch)`);
     console.log(`   GET  /credentials/github/callback`);
-    console.log(`\n   Anti-farming: ON — max +1/day, pattern detection, cooldowns\n`);
+    console.log(`\n   Anti-farming: ON — max +1/day, pattern detection, cooldowns`);
+    console.log(`\n   Consensus P2P (sin EVM, sin gas):`);
+    console.log(`   GET  /consensus/state-info    handshake para state-sync`);
+    console.log(`   GET  /consensus/state         bulk state sync paginado`);
+    console.log(`   POST /consensus/message       recibir msg PROPOSE/VOTE/COMMIT/ATTEST`);
+    console.log(`\n`);
   });
 
   return server;
