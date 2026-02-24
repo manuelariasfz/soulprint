@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MCP Server Integration — Soulprint Docs</title>
+<meta name="description" content="Protect MCP server tools with Soulprint identity gates — 3 lines of code, 0-100 trust score thresholds, full TypeScript support.">
+<link rel="stylesheet" href="shared.css">
+</head>
+<body>
+<div class="topbar">
+  <a href="/" class="topbar-logo">🌀 Soulprint</a>
+  <div class="topbar-links">
+    <a href="https://github.com/manuelariasfz/soulprint">GitHub</a>
+    <a href="https://www.npmjs.com/package/soulprint-mcp">npm</a>
+    <a href="/">Home</a>
+  </div>
+</div>
+<div class="docs-layout">
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#7c6cf5"/><stop offset="100%" stop-color="#a78bfa"/>
+        </linearGradient></defs>
+        <circle cx="32" cy="26" r="18" fill="url(#g)"/>
+        <rect x="14" y="26" width="36" height="20" fill="url(#g)"/>
+        <circle cx="19" cy="48" r="5.5" fill="url(#g)"/>
+        <circle cx="32" cy="49" r="5.5" fill="url(#g)"/>
+        <circle cx="45" cy="48" r="5.5" fill="url(#g)"/>
+        <ellipse cx="25" cy="25" rx="4.5" ry="3" fill="#0a0a0f"/>
+        <ellipse cx="25" cy="25" rx="2.5" ry="1.8" fill="#ffffff"/>
+        <ellipse cx="39" cy="25" rx="4.5" ry="3" fill="#0a0a0f"/>
+        <ellipse cx="39" cy="25" rx="2.5" ry="1.8" fill="#ffffff"/>
+      </svg>
+      <span class="sidebar-logo-text">Soulprint Docs</span>
+    </div>
+    <nav>
+      <div class="sidebar-section">Getting Started</div>
+      <a href="index.html">Overview</a>
+      <a href="quickstart.html">Quick Start</a>
+      <div class="sidebar-section">Core Concepts</div>
+      <a href="verify.html">Identity Verification</a>
+      <a href="trust-score.html">Trust Score (0–100)</a>
+      <div class="sidebar-section">Integrations</div>
+      <a href="mcp.html" class="active">MCP Servers</a>
+      <a href="openclaw.html">OpenClaw Bots</a>
+      <div class="sidebar-section">Infrastructure</div>
+      <a href="validator.html">Validator Node</a>
+      <a href="api.html">REST API Reference</a>
+      <div class="sidebar-section">Ecosystem</div>
+      <a href="countries.html">Country Support</a>
+    </nav>
+  </aside>
+  <main class="content">
+    <div class="doc-hero">
+      <h1>🔌 MCP Server Integration</h1>
+      <p class="subtitle">Gate any MCP tool behind identity and reputation requirements — in 3 lines of TypeScript.</p>
+    </div>
+
+    <h2>Install</h2>
+    <pre><code>npm install soulprint-mcp</code></pre>
+
+    <h2>Basic Usage</h2>
+    <p>Wrap any MCP tool handler with <code>requireSoulprint()</code>:</p>
+    <pre><code><span class="keyword">import</span> { McpServer } <span class="keyword">from</span> <span class="string">"@modelcontextprotocol/sdk/server/mcp.js"</span>;
+<span class="keyword">import</span> { requireSoulprint } <span class="keyword">from</span> <span class="string">"soulprint-mcp"</span>;
+<span class="keyword">import</span> { z } <span class="keyword">from</span> <span class="string">"zod"</span>;
+
+<span class="keyword">const</span> server = <span class="keyword">new</span> <span class="type">McpServer</span>({ name: <span class="string">"my-server"</span>, version: <span class="string">"1.0.0"</span> });
+
+<span class="comment">// 🔓 Public tool — no identity required</span>
+server.tool(<span class="string">"public-info"</span>, {}, <span class="keyword">async</span> () => ({
+  content: [{ type: <span class="string">"text"</span>, text: <span class="string">"Open to everyone"</span> }]
+}));
+
+<span class="comment">// 🔐 Protected tool — requires score ≥ 60</span>
+server.tool(
+  <span class="string">"premium-search"</span>,
+  { query: z.string() },
+  requireSoulprint({ minScore: <span class="keyword">60</span> }),
+  <span class="keyword">async</span> (args, ctx) => {
+    <span class="keyword">const</span> { did, score } = ctx.soulprint;
+    <span class="comment">// 'did' = "did:soulprint:abc123..."</span>
+    <span class="comment">// 'score' = 72  (identity + reputation combined)</span>
+    <span class="keyword">return</span> {
+      content: [{ type: <span class="string">"text"</span>, text: <span class="string">`Results for: ${args.query}`</span> }]
+    };
+  }
+);</code></pre>
+
+    <h2>Configuration Options</h2>
+    <table>
+      <tr><th>Option</th><th>Type</th><th>Default</th><th>Description</th></tr>
+      <tr><td><code>minScore</code></td><td><code>number</code></td><td><code>0</code></td><td>Minimum trust score (0–100) required to call this tool</td></tr>
+      <tr><td><code>minIdentity</code></td><td><code>number</code></td><td><code>0</code></td><td>Minimum identity sub-score (0–80) specifically</td></tr>
+      <tr><td><code>minReputation</code></td><td><code>number</code></td><td><code>0</code></td><td>Minimum bot reputation sub-score (0–20)</td></tr>
+      <tr><td><code>requireDocument</code></td><td><code>boolean</code></td><td><code>false</code></td><td>Require verified government document (credential: document)</td></tr>
+      <tr><td><code>requireFaceMatch</code></td><td><code>boolean</code></td><td><code>false</code></td><td>Require face biometric verification</td></tr>
+      <tr><td><code>allowedCountries</code></td><td><code>string[]</code></td><td>all</td><td>Restrict to specific country codes (<code>["CO","MX"]</code>)</td></tr>
+      <tr><td><code>validatorUrl</code></td><td><code>string</code></td><td>auto</td><td>Override validator node URL for token verification</td></tr>
+      <tr><td><code>offline</code></td><td><code>boolean</code></td><td><code>false</code></td><td>Skip network verification — validate token signature only</td></tr>
+    </table>
+
+    <h2>Score Tiers — Recommended Thresholds</h2>
+    <table>
+      <tr><th>Score</th><th>What it means</th><th>Typical use case</th></tr>
+      <tr><td><span class="badge badge-blue">≥ 10</span></td><td>Neutral bot (no spam detected)</td><td>Basic rate-limited access</td></tr>
+      <tr><td><span class="badge badge-purple">≥ 40</span></td><td>Email + phone verified</td><td>Personalized features</td></tr>
+      <tr><td><span class="badge badge-purple">≥ 60</span></td><td>Document OCR verified</td><td>Premium search, paid features</td></tr>
+      <tr><td><span class="badge badge-yellow">≥ 80</span></td><td>Full identity + document + face match</td><td>Financial tools, high-stakes actions</td></tr>
+      <tr><td><span class="badge badge-green">≥ 95</span></td><td>Full identity + high reputation</td><td>Admin tools, compliance-required operations</td></tr>
+    </table>
+
+    <h2>Accessing Identity Context</h2>
+    <p>When the middleware passes, <code>ctx.soulprint</code> contains:</p>
+    <pre><code><span class="keyword">interface</span> <span class="type">SoulprintContext</span> {
+  did:         <span class="type">string</span>;       <span class="comment">// "did:soulprint:abc123..."</span>
+  score:       <span class="type">number</span>;       <span class="comment">// 0–100 combined trust score</span>
+  identity:    <span class="type">number</span>;       <span class="comment">// 0–80 identity sub-score</span>
+  reputation:  <span class="type">number</span>;       <span class="comment">// 0–20 bot reputation sub-score</span>
+  country:     <span class="type">string</span>;       <span class="comment">// "CO", "MX", "BR"…</span>
+  credentials: <span class="type">string</span>[];    <span class="comment">// ["email","document","face_match",…]</span>
+  expiresAt:   <span class="type">string</span>;       <span class="comment">// ISO timestamp</span>
+  verified:    <span class="type">boolean</span>;      <span class="comment">// token signature valid</span>
+}</code></pre>
+
+    <h2>Token Lookup — Header Priority</h2>
+    <p>The middleware reads the token from these headers (in order):</p>
+    <ol>
+      <li><code>x-soulprint-token</code> — MCP-native capability header</li>
+      <li><code>X-Soulprint</code> — standard HTTP header</li>
+      <li><code>Authorization: Bearer &lt;token&gt;</code> — OAuth-compatible</li>
+    </ol>
+
+    <h2>Error Handling</h2>
+    <p>When access is denied, the middleware returns a structured MCP error:</p>
+    <pre><code>{
+  "error": {
+    "code": -32003,
+    "message": <span class="string">"Soulprint: insufficient trust score. Required: 60, got: 42"</span>,
+    "data": {
+      "required": <span class="keyword">60</span>,
+      "actual": <span class="keyword">42</span>,
+      "did": <span class="string">"did:soulprint:abc123..."</span>
+    }
+  }
+}</code></pre>
+
+    <h2>Express / Fastify Middleware</h2>
+    <p>For REST APIs (non-MCP), use <code>soulprint-express</code>:</p>
+    <pre><code>npm install soulprint-express</code></pre>
+    <pre><code><span class="keyword">import</span> express <span class="keyword">from</span> <span class="string">"express"</span>;
+<span class="keyword">import</span> { soulprintMiddleware } <span class="keyword">from</span> <span class="string">"soulprint-express"</span>;
+
+<span class="keyword">const</span> app = express();
+
+<span class="comment">// Apply globally — all routes below require score ≥ 40</span>
+app.use(soulprintMiddleware({ minScore: <span class="keyword">40</span> }));
+
+<span class="comment">// Or apply per-route</span>
+app.post(
+  <span class="string">"/apply-job"</span>,
+  soulprintMiddleware({ minScore: <span class="keyword">95</span>, requireDocument: <span class="keyword">true</span> }),
+  (req, res) => {
+    <span class="keyword">const</span> { did, score, country } = req.soulprint;
+    res.json({ accepted: <span class="keyword">true</span>, applicant: did });
+  }
+);</code></pre>
+
+    <h2>Full Example — mcp-colombia-hub</h2>
+    <p>The <a href="https://www.npmjs.com/package/mcp-colombia-hub">mcp-colombia-hub</a> package is the reference implementation of Soulprint in a production MCP server. It uses <code>withTracking()</code> to wrap every tool call and automatically issues behavioral attestations:</p>
+    <pre><code><span class="keyword">import</span> { withTracking } <span class="keyword">from</span> <span class="string">"soulprint-mcp"</span>;
+
+<span class="comment">// Wraps the tool + tracks usage for reputation scoring</span>
+server.tool(
+  <span class="string">"ml_buscar_productos"</span>,
+  { query: z.string(), limit: z.number().optional() },
+  withTracking({ minScore: <span class="keyword">0</span>, toolName: <span class="string">"ml_buscar_productos"</span> }),
+  handler
+);</code></pre>
+
+    <div class="callout callout-tip">
+      <div class="callout-title">Reward logic</div>
+      Agents that call ≥ 3 distinct tools with ≥ 3 completions and no spam events earn a +1 attestation from the service. This automatically increases their bot reputation score.
+    </div>
+  </main>
+</div>
+</body>
+</html>

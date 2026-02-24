@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Country Support — Soulprint Docs</title>
+<meta name="description" content="Countries supported by Soulprint for identity verification — Colombia, Mexico, Brazil, Argentina, and how to add your country.">
+<link rel="stylesheet" href="shared.css">
+</head>
+<body>
+<div class="topbar">
+  <a href="/" class="topbar-logo">🌀 Soulprint</a>
+  <div class="topbar-links"><a href="https://github.com/manuelariasfz/soulprint">GitHub</a><a href="/">Home</a></div>
+</div>
+<div class="docs-layout">
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#7c6cf5"/><stop offset="100%" stop-color="#a78bfa"/>
+        </linearGradient></defs>
+        <circle cx="32" cy="26" r="18" fill="url(#g)"/>
+        <rect x="14" y="26" width="36" height="20" fill="url(#g)"/>
+        <circle cx="19" cy="48" r="5.5" fill="url(#g)"/>
+        <circle cx="32" cy="49" r="5.5" fill="url(#g)"/>
+        <circle cx="45" cy="48" r="5.5" fill="url(#g)"/>
+        <ellipse cx="25" cy="25" rx="4.5" ry="3" fill="#0a0a0f"/>
+        <ellipse cx="25" cy="25" rx="2.5" ry="1.8" fill="#ffffff"/>
+        <ellipse cx="39" cy="25" rx="4.5" ry="3" fill="#0a0a0f"/>
+        <ellipse cx="39" cy="25" rx="2.5" ry="1.8" fill="#ffffff"/>
+      </svg>
+      <span class="sidebar-logo-text">Soulprint Docs</span>
+    </div>
+    <nav>
+      <div class="sidebar-section">Getting Started</div>
+      <a href="index.html">Overview</a><a href="quickstart.html">Quick Start</a>
+      <div class="sidebar-section">Core Concepts</div>
+      <a href="verify.html">Identity Verification</a><a href="trust-score.html">Trust Score (0–100)</a>
+      <div class="sidebar-section">Integrations</div>
+      <a href="mcp.html">MCP Servers</a><a href="openclaw.html">OpenClaw Bots</a>
+      <div class="sidebar-section">Infrastructure</div>
+      <a href="validator.html">Validator Node</a><a href="api.html">REST API Reference</a>
+      <div class="sidebar-section">Ecosystem</div>
+      <a href="countries.html" class="active">Country Support</a>
+    </nav>
+  </aside>
+  <main class="content">
+    <div class="doc-hero">
+      <h1>🌍 Country Support</h1>
+      <p class="subtitle">Currently 7 countries supported — and growing. Add yours in one PR.</p>
+    </div>
+
+    <h2>Supported Countries</h2>
+    <table>
+      <tr><th>Country</th><th>Document</th><th>Code</th><th>Format</th><th>Status</th></tr>
+      <tr>
+        <td>🇨🇴 Colombia</td><td>Cédula de Ciudadanía</td><td><code>CO</code></td>
+        <td><code>CC-XXXXXXXXXX</code> (10 digits)</td>
+        <td><span class="badge badge-green">Full ✅</span></td>
+      </tr>
+      <tr>
+        <td>🇲🇽 Mexico</td><td>CURP / INE</td><td><code>MX</code></td>
+        <td><code>AAAA######AAAAAA##</code> (CURP 18 chars)</td>
+        <td><span class="badge badge-purple">Partial ⚡</span></td>
+      </tr>
+      <tr>
+        <td>🇦🇷 Argentina</td><td>DNI</td><td><code>AR</code></td>
+        <td><code>XX.XXX.XXX</code> (8 digits)</td>
+        <td><span class="badge badge-purple">Partial ⚡</span></td>
+      </tr>
+      <tr>
+        <td>🇻🇪 Venezuela</td><td>Cédula V/E</td><td><code>VE</code></td>
+        <td><code>V-XXXXXXXX</code> or <code>E-XXXXXXXX</code></td>
+        <td><span class="badge badge-purple">Partial ⚡</span></td>
+      </tr>
+      <tr>
+        <td>🇵🇪 Peru</td><td>DNI</td><td><code>PE</code></td>
+        <td><code>XXXXXXXX</code> (8 digits)</td>
+        <td><span class="badge badge-purple">Partial ⚡</span></td>
+      </tr>
+      <tr>
+        <td>🇧🇷 Brazil</td><td>CPF</td><td><code>BR</code></td>
+        <td><code>XXX.XXX.XXX-XX</code> (11 digits)</td>
+        <td><span class="badge badge-purple">Partial ⚡</span></td>
+      </tr>
+      <tr>
+        <td>🇨🇱 Chile</td><td>RUN / RUT</td><td><code>CL</code></td>
+        <td><code>XX.XXX.XXX-X</code> (8 digits + verifier)</td>
+        <td><span class="badge badge-purple">Partial ⚡</span></td>
+      </tr>
+    </table>
+
+    <p><strong>Full support:</strong> OCR extraction + MRZ parsing + face match + biometric proof + all 6 credentials available.<br>
+    <strong>Partial support:</strong> Document number validation + basic OCR; face match and biometric proof may have reduced accuracy.</p>
+
+    <h2>Countries Planned (Phase 6)</h2>
+    <ul>
+      <li>🇪🇸 Spain — DNI (<code>XXXXXXXX-X</code>) / NIE (<code>X-XXXXXXX-X</code>)</li>
+      <li>🇮🇳 India — Aadhaar (<code>XXXX XXXX XXXX</code>)</li>
+      <li>🇳🇬 Nigeria — NIN (<code>XXXXXXXXXXX</code>)</li>
+      <li>🇿🇦 South Africa — SA ID (<code>YYMMDD XXXX X XX</code>)</li>
+      <li>🇵🇭 Philippines — PhilSys ID (<code>XXXX-XXXX-XXXX</code>)</li>
+    </ul>
+    <div class="callout callout-tip">
+      <div class="callout-title">Help us prioritize</div>
+      Vote for your country by opening a <a href="https://github.com/manuelariasfz/soulprint/issues">GitHub Issue</a> with the label <code>country-request</code>.
+    </div>
+
+    <h2>Add Your Country — Contributor Guide</h2>
+    <p>Adding a new country requires implementing a <strong>Document Adapter</strong> in the <code>soulprint-verify</code> package. Here's how:</p>
+
+    <h3>1. Fork the repository</h3>
+    <pre><code>git clone https://github.com/manuelariasfz/soulprint
+cd soulprint
+npm install
+cd packages/verify && npm install</code></pre>
+
+    <h3>2. Create the document adapter</h3>
+    <pre><code><span class="comment">// packages/verify/src/adapters/XX.ts  (replace XX with country code)</span>
+
+<span class="keyword">import</span> { <span class="type">DocumentAdapter</span>, <span class="type">ExtractedIdentity</span> } <span class="keyword">from</span> <span class="string">"../types"</span>;
+
+<span class="keyword">export const</span> <span class="type">XX</span>Adapter: <span class="type">DocumentAdapter</span> = {
+  countryCode: <span class="string">"XX"</span>,
+  documentName: <span class="string">"Your Country ID Name"</span>,
+
+  <span class="comment">// Validate format of the document number</span>
+  validate(docNumber: <span class="type">string</span>): <span class="type">boolean</span> {
+    <span class="keyword">return</span> /^[A-Z0-9]{8,12}$/.test(docNumber.replace(/[\s\-\.]/g, <span class="string">""</span>));
+  },
+
+  <span class="comment">// Extract fields from OCR text</span>
+  extract(ocrText: <span class="type">string</span>): <span class="type">Partial&lt;ExtractedIdentity&gt;</span> {
+    <span class="keyword">const</span> docMatch = ocrText.match(<span class="string">/YOUR_REGEX_HERE/</span>);
+    <span class="keyword">return</span> {
+      documentNumber: docMatch?.[<span class="keyword">1</span>] ?? <span class="keyword">null</span>,
+      fullName: extractName(ocrText),
+      dateOfBirth: extractDOB(ocrText),
+      nationality: <span class="string">"XX"</span>
+    };
+  }
+};</code></pre>
+
+    <h3>3. Register the adapter</h3>
+    <pre><code><span class="comment">// packages/verify/src/adapters/index.ts</span>
+<span class="keyword">import</span> { <span class="type">XX</span>Adapter } <span class="keyword">from</span> <span class="string">"./XX"</span>;
+
+<span class="keyword">export const</span> ADAPTERS = {
+  CO: COAdapter,
+  MX: MXAdapter,
+  <span class="comment">// ... existing</span>
+  XX: XXAdapter, <span class="comment">// ← add your country</span>
+};</code></pre>
+
+    <h3>4. Add tests</h3>
+    <pre><code><span class="comment">// packages/verify/tests/adapters/XX.test.ts</span>
+<span class="keyword">import</span> { <span class="type">XX</span>Adapter } <span class="keyword">from</span> <span class="string">"../../src/adapters/XX"</span>;
+
+test(<span class="string">"validates XX document number"</span>, () => {
+  expect(XXAdapter.validate(<span class="string">"VALID_SAMPLE"</span>)).toBe(<span class="keyword">true</span>);
+  expect(XXAdapter.validate(<span class="string">"INVALID"</span>)).toBe(<span class="keyword">false</span>);
+});
+
+test(<span class="string">"extracts fields from OCR"</span>, () => {
+  <span class="keyword">const</span> result = XXAdapter.extract(<span class="string">"... sample OCR text ..."</span>);
+  expect(result.documentNumber).toBe(<span class="string">"VALID_SAMPLE"</span>);
+});</code></pre>
+
+    <h3>5. Open a Pull Request</h3>
+    <p>Open a PR against <code>main</code> with:</p>
+    <ul>
+      <li>The adapter file (<code>packages/verify/src/adapters/XX.ts</code>)</li>
+      <li>Registration in <code>index.ts</code></li>
+      <li>At least 5 test cases (valid formats, edge cases, invalid formats)</li>
+      <li>Update to <code>README.md</code> country support table</li>
+    </ul>
+    <p>PR template: <a href="https://github.com/manuelariasfz/soulprint/blob/main/.github/PULL_REQUEST_TEMPLATE.md">PULL_REQUEST_TEMPLATE.md</a></p>
+
+    <div class="callout callout-info">
+      <div class="callout-title">No OCR data needed</div>
+      You don't need real ID photos to contribute. All tests use synthetic OCR strings. Never commit real document data.
+    </div>
+
+    <h2>Document Format Registry</h2>
+    <p>Country code 2-letter codes follow <a href="https://en.wikipedia.org/wiki/ISO_3166-1_alpha-2">ISO 3166-1 alpha-2</a>. The document number format for each country is used to derive the identity hash — only the normalized number (digits only, no separators) is used in the hash computation.</p>
+  </main>
+</div>
+</body>
+</html>

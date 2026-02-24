@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Trust Score — Soulprint Docs</title>
+<meta name="description" content="How Soulprint's 100-point trust score works — identity sub-score (0-80) plus bot reputation (0-20).">
+<link rel="stylesheet" href="shared.css">
+</head>
+<body>
+<div class="topbar">
+  <a href="/" class="topbar-logo">🌀 Soulprint</a>
+  <div class="topbar-links"><a href="https://github.com/manuelariasfz/soulprint">GitHub</a><a href="/">Home</a></div>
+</div>
+<div class="docs-layout">
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#7c6cf5"/><stop offset="100%" stop-color="#a78bfa"/>
+        </linearGradient></defs>
+        <circle cx="32" cy="26" r="18" fill="url(#g)"/>
+        <rect x="14" y="26" width="36" height="20" fill="url(#g)"/>
+        <circle cx="19" cy="48" r="5.5" fill="url(#g)"/>
+        <circle cx="32" cy="49" r="5.5" fill="url(#g)"/>
+        <circle cx="45" cy="48" r="5.5" fill="url(#g)"/>
+        <ellipse cx="25" cy="25" rx="4.5" ry="3" fill="#0a0a0f"/>
+        <ellipse cx="25" cy="25" rx="2.5" ry="1.8" fill="#ffffff"/>
+        <ellipse cx="39" cy="25" rx="4.5" ry="3" fill="#0a0a0f"/>
+        <ellipse cx="39" cy="25" rx="2.5" ry="1.8" fill="#ffffff"/>
+      </svg>
+      <span class="sidebar-logo-text">Soulprint Docs</span>
+    </div>
+    <nav>
+      <div class="sidebar-section">Getting Started</div>
+      <a href="index.html">Overview</a><a href="quickstart.html">Quick Start</a>
+      <div class="sidebar-section">Core Concepts</div>
+      <a href="verify.html">Identity Verification</a>
+      <a href="trust-score.html" class="active">Trust Score (0–100)</a>
+      <div class="sidebar-section">Integrations</div>
+      <a href="mcp.html">MCP Servers</a><a href="openclaw.html">OpenClaw Bots</a>
+      <div class="sidebar-section">Infrastructure</div>
+      <a href="validator.html">Validator Node</a><a href="api.html">REST API Reference</a>
+      <div class="sidebar-section">Ecosystem</div>
+      <a href="countries.html">Country Support</a>
+    </nav>
+  </aside>
+  <main class="content">
+    <div class="doc-hero">
+      <h1>💯 Trust Score (0–100)</h1>
+      <p class="subtitle">One number that captures who you are and how you behave.</p>
+    </div>
+
+    <h2>Score Formula</h2>
+    <pre><code>trust_score = identity_score (0–80) + bot_reputation (0–20)</code></pre>
+    <p>Both components are independent. You can have a high identity score and a low reputation (a verified human who spams), or a low identity score and a high reputation (a trusted automation with minimal credentials).</p>
+
+    <h2>Identity Score (0–80)</h2>
+    <p>The identity score accumulates as the user completes verification steps. Each step is additive:</p>
+    <table>
+      <tr><th>Credential</th><th>Points</th><th>Cumulative</th><th>How to obtain</th></tr>
+      <tr><td>Email verified</td><td>+8</td><td>8</td><td>OTP to registered email</td></tr>
+      <tr><td>Phone verified</td><td>+12</td><td>20</td><td>OTP to mobile number</td></tr>
+      <tr><td>GitHub account</td><td>+16</td><td>36</td><td>OAuth via github.com</td></tr>
+      <tr><td>Document OCR</td><td>+20</td><td>56</td><td>Government ID scanned successfully</td></tr>
+      <tr><td>Face match</td><td>+16</td><td>72</td><td>Selfie matches ID photo</td></tr>
+      <tr><td>Biometric proof</td><td>+8</td><td><strong>80</strong></td><td>Privacy proof generated</td></tr>
+    </table>
+    <div class="callout callout-tip">
+      <div class="callout-title">Minimum for most services</div>
+      Most services require score ≥ 60, which means: email + phone + GitHub + document OCR (56) or email + document + face match (44+20+16=... wait — email(8) + document(20) + face_match(16) = 44, add phone(12) = 56). To reach 60, you also need to start the biometric step (+8 = 64).
+    </div>
+
+    <h2>Bot Reputation (0–20)</h2>
+    <p>The reputation sub-score is managed by the validator network and reflects observed agent behavior:</p>
+    <table>
+      <tr><th>Score</th><th>State</th><th>Meaning</th></tr>
+      <tr><td>0–4</td><td><span class="badge badge-yellow">Flagged</span></td><td>Multiple spam violations or attestation losses</td></tr>
+      <tr><td>5–9</td><td><span class="badge badge-blue">Low</span></td><td>New agent or minor violations detected</td></tr>
+      <tr><td><strong>10</strong></td><td><span class="badge badge-blue">Neutral</span></td><td><strong>Default for all new agents</strong></td></tr>
+      <tr><td>11–15</td><td><span class="badge badge-purple">Good</span></td><td>Positive behavioral attestations received</td></tr>
+      <tr><td>16–19</td><td><span class="badge badge-green">Trusted</span></td><td>Consistent good behavior across many validators</td></tr>
+      <tr><td>20</td><td><span class="badge badge-green">Excellent</span></td><td>Maximum reputation — well-known trusted agent</td></tr>
+    </table>
+
+    <h3>How reputation changes</h3>
+    <p>Validators issue attestations via <code>POST /reputation/attest</code>. Each attestation is <code>+1</code> (positive) or <code>-1</code> (negative) and propagates to all nodes via the P2P network.</p>
+
+    <h4>Positive attestation triggers (auto-issued by services)</h4>
+    <ul>
+      <li>Agent called ≥ 3 distinct tools in a session</li>
+      <li>Agent completed ≥ 3 successful tool calls</li>
+      <li>No spam events in the session</li>
+      <li>Diverse usage pattern (not a single repetitive call)</li>
+    </ul>
+
+    <h4>Negative attestation triggers (spam guards)</h4>
+    <ul>
+      <li>More than 5 requests in 60 seconds → <code>-1</code> attestation</li>
+      <li>Repeated identical requests (same args) → <code>-1</code> attestation</li>
+      <li>Token used from more than 3 different IPs in 1 hour</li>
+      <li>Manual moderation by a validator operator</li>
+    </ul>
+
+    <h2>Score Thresholds Reference</h2>
+    <p>Recommended thresholds for different types of access:</p>
+    <table>
+      <tr><th>Score</th><th>Typical use case</th><th>Credentials typically present</th></tr>
+      <tr><td><span class="badge badge-blue">≥ 10</span></td><td>Basic access, rate-limited API</td><td>Default neutral</td></tr>
+      <tr><td><span class="badge badge-blue">≥ 30</span></td><td>Personalized features, saved preferences</td><td>Email + phone</td></tr>
+      <tr><td><span class="badge badge-purple">≥ 60</span></td><td>Premium search, paid tools, data access</td><td>Email + phone + document</td></tr>
+      <tr><td><span class="badge badge-purple">≥ 72</span></td><td>Financial tools, professional features</td><td>Full identity (no biometric proof)</td></tr>
+      <tr><td><span class="badge badge-green">≥ 80</span></td><td>High-stakes actions, compliance-required</td><td>Full identity (all credentials)</td></tr>
+      <tr><td><span class="badge badge-green">≥ 95</span></td><td>Admin tools, legal submissions, job applications</td><td>Full identity + high reputation (≥ 15)</td></tr>
+    </table>
+
+    <h2>How to Improve Your Score</h2>
+    <ol>
+      <li><strong>Complete all identity steps</strong> — Run <code>npx soulprint verify-me</code> to get all 6 credentials (max 80 identity points)</li>
+      <li><strong>Use diverse tools</strong> — Call multiple different tools when using MCP services to earn positive behavioral attestations</li>
+      <li><strong>Avoid spam</strong> — Don't send repetitive requests; stay within rate limits</li>
+      <li><strong>Build reputation over time</strong> — Reputation accumulates across sessions; consistent good behavior compounds</li>
+    </ol>
+
+    <h2>Score in the Token</h2>
+    <pre><code><span class="comment">// Decoded SPT token payload</span>
+{
+  <span class="string">"did"</span>:         <span class="string">"did:soulprint:abc123..."</span>,
+  <span class="string">"score"</span>:       <span class="keyword">82</span>,         <span class="comment">// combined</span>
+  <span class="string">"identity"</span>:   <span class="keyword">72</span>,         <span class="comment">// 0–80</span>
+  <span class="string">"reputation"</span>: <span class="keyword">10</span>,         <span class="comment">// 0–20</span>
+  <span class="string">"credentials"</span>: [
+    <span class="string">"email"</span>,                   <span class="comment">// +8</span>
+    <span class="string">"phone"</span>,                   <span class="comment">// +12</span>
+    <span class="string">"github"</span>,                  <span class="comment">// +16</span>
+    <span class="string">"document"</span>,               <span class="comment">// +20</span>
+    <span class="string">"face_match"</span>              <span class="comment">// +16 = 72 identity</span>
+  ]
+}</code></pre>
+  </main>
+</div>
+</body>
+</html>

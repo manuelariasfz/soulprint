@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Validator Node — Soulprint Docs</title>
+<meta name="description" content="Run a Soulprint validator node — HTTP API on port 4888, P2P mesh on port 6888, full configuration reference.">
+<link rel="stylesheet" href="shared.css">
+</head>
+<body>
+<div class="topbar">
+  <a href="/" class="topbar-logo">🌀 Soulprint</a>
+  <div class="topbar-links"><a href="https://github.com/manuelariasfz/soulprint">GitHub</a><a href="/">Home</a></div>
+</div>
+<div class="docs-layout">
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#7c6cf5"/><stop offset="100%" stop-color="#a78bfa"/>
+        </linearGradient></defs>
+        <circle cx="32" cy="26" r="18" fill="url(#g)"/>
+        <rect x="14" y="26" width="36" height="20" fill="url(#g)"/>
+        <circle cx="19" cy="48" r="5.5" fill="url(#g)"/>
+        <circle cx="32" cy="49" r="5.5" fill="url(#g)"/>
+        <circle cx="45" cy="48" r="5.5" fill="url(#g)"/>
+        <ellipse cx="25" cy="25" rx="4.5" ry="3" fill="#0a0a0f"/>
+        <ellipse cx="25" cy="25" rx="2.5" ry="1.8" fill="#ffffff"/>
+        <ellipse cx="39" cy="25" rx="4.5" ry="3" fill="#0a0a0f"/>
+        <ellipse cx="39" cy="25" rx="2.5" ry="1.8" fill="#ffffff"/>
+      </svg>
+      <span class="sidebar-logo-text">Soulprint Docs</span>
+    </div>
+    <nav>
+      <div class="sidebar-section">Getting Started</div>
+      <a href="index.html">Overview</a><a href="quickstart.html">Quick Start</a>
+      <div class="sidebar-section">Core Concepts</div>
+      <a href="verify.html">Identity Verification</a><a href="trust-score.html">Trust Score (0–100)</a>
+      <div class="sidebar-section">Integrations</div>
+      <a href="mcp.html">MCP Servers</a><a href="openclaw.html">OpenClaw Bots</a>
+      <div class="sidebar-section">Infrastructure</div>
+      <a href="validator.html" class="active">Validator Node</a><a href="api.html">REST API Reference</a>
+      <div class="sidebar-section">Ecosystem</div>
+      <a href="countries.html">Country Support</a>
+    </nav>
+  </aside>
+  <main class="content">
+    <div class="doc-hero">
+      <h1>🌐 Validator Node</h1>
+      <p class="subtitle">Run a node in the Soulprint P2P network — verify proofs, issue reputation attestations, earn validator status.</p>
+    </div>
+
+    <h2>Quick Start</h2>
+    <pre><code><span class="comment"># Start the node (HTTP 4888 + P2P 6888)</span>
+npx soulprint node
+
+<span class="comment"># Or install globally first:</span>
+npm install -g soulprint
+soulprint node</code></pre>
+    <p>Example startup output:</p>
+    <pre><code>🌀 Soulprint Validator Node v0.2.0
+✅ HTTP API listening on http://0.0.0.0:4888
+✅ P2P node started
+   Peer ID:    12D3KooW[...generated peer ID...]
+   Multiaddr:  /ip4/0.0.0.0/tcp/6888/p2p/12D3KooW[...]
+✅ mDNS discovery active (local network)
+⏳ Waiting for bootstrap peers...
+   (No bootstrap peers configured — running standalone)</code></pre>
+
+    <h2>Configuration</h2>
+    <h3>Environment Variables</h3>
+    <table>
+      <tr><th>Variable</th><th>Default</th><th>Description</th></tr>
+      <tr><td><code>SOULPRINT_HTTP_PORT</code></td><td><code>4888</code></td><td>HTTP API port</td></tr>
+      <tr><td><code>SOULPRINT_P2P_PORT</code></td><td><code>6888</code></td><td>P2P libp2p port (HTTP port + 2000)</td></tr>
+      <tr><td><code>SOULPRINT_HOST</code></td><td><code>0.0.0.0</code></td><td>Bind address for HTTP API</td></tr>
+      <tr><td><code>SOULPRINT_BOOTSTRAP</code></td><td>none</td><td>Comma-separated bootstrap multiaddrs (for joining mainnet)</td></tr>
+      <tr><td><code>SOULPRINT_DATA_DIR</code></td><td><code>~/.soulprint</code></td><td>Directory for persistent data (keys, attestations, proof registry)</td></tr>
+      <tr><td><code>SOULPRINT_RATE_LIMIT</code></td><td><code>100</code></td><td>Max requests per minute per IP</td></tr>
+      <tr><td><code>SOULPRINT_OPERATOR_KEY</code></td><td>auto-generated</td><td>Operator private key (persisted to <code>$DATA_DIR/operator.key</code>)</td></tr>
+    </table>
+
+    <h3>Example — Custom ports</h3>
+    <pre><code>SOULPRINT_HTTP_PORT=8000 SOULPRINT_P2P_PORT=10000 npx soulprint node</code></pre>
+
+    <h3>Example — Connect to mainnet bootstrap node</h3>
+    <pre><code>SOULPRINT_BOOTSTRAP=<span class="string">"/ip4/&lt;bootstrap-ip&gt;/tcp/6888/p2p/&lt;bootstrap-peer-id&gt;"</span> \
+  npx soulprint node</code></pre>
+
+    <h2>P2P Network Architecture</h2>
+    <p>The Soulprint P2P network uses <strong>libp2p v2.10</strong> with the following stack:</p>
+    <table>
+      <tr><th>Component</th><th>Purpose</th></tr>
+      <tr><td>TCP Transport</td><td>Reliable connection layer</td></tr>
+      <tr><td>Noise encryption</td><td>Encrypted channels between all peers</td></tr>
+      <tr><td>Yamux multiplexing</td><td>Multiple streams per connection</td></tr>
+      <tr><td>Kademlia DHT</td><td>Peer routing and discovery</td></tr>
+      <tr><td>GossipSub</td><td>Attestation broadcast (topic: <code>soulprint-attestations-v1</code>)</td></tr>
+      <tr><td>mDNS</td><td>Auto-discovery on local networks</td></tr>
+    </table>
+
+    <h3>Dual-channel attestation propagation</h3>
+    <p>When a validator issues an attestation, it is sent via two channels simultaneously:</p>
+    <ul>
+      <li><strong>Primary:</strong> GossipSub broadcast to all peers on <code>soulprint-attestations-v1</code></li>
+      <li><strong>Fallback:</strong> HTTP <code>POST /reputation/attest</code> to known peer HTTP endpoints (for legacy nodes)</li>
+    </ul>
+    <p>Anti-loop and anti-replay protections prevent attestations from cycling: each message has a unique ID; nodes that have already processed an ID discard duplicates.</p>
+
+    <h2>Validator Data Persistence</h2>
+    <p>The node persists the following to <code>$SOULPRINT_DATA_DIR</code>:</p>
+    <ul>
+      <li><code>operator.key</code> — the node's signing key (auto-generated on first run)</li>
+      <li><code>proof-hashes.db</code> — registry of seen identity proof hashes (anti-replay)</li>
+      <li><code>reputation.db</code> — reputation scores per DID</li>
+      <li><code>attestations.log</code> — audit log of all issued attestations</li>
+    </ul>
+
+    <h2>Security Considerations</h2>
+    <div class="callout callout-warn">
+      <div class="callout-title">Rate limiting</div>
+      The default rate limit is 100 requests/min per IP. Set <code>SOULPRINT_RATE_LIMIT</code> lower for public-facing nodes. DDoS protection via IP banning is implemented after 10x rate limit breach.
+    </div>
+    <div class="callout callout-warn">
+      <div class="callout-title">Anti-Sybil protection</div>
+      Each identity hash can only be registered once. A validator that tries to register duplicate hashes will have its attestations rejected by the network.
+    </div>
+
+    <h2>Docker Deployment</h2>
+    <pre><code>docker run -d \
+  --name soulprint-node \
+  -p 4888:4888 \
+  -p 6888:6888 \
+  -v ~/.soulprint:/data \
+  -e SOULPRINT_DATA_DIR=/data \
+  -e SOULPRINT_BOOTSTRAP=<span class="string">"&lt;bootstrap-multiaddr&gt;"</span> \
+  node:20-alpine \
+  sh -c <span class="string">"npm i -g soulprint && soulprint node"</span></code></pre>
+
+    <h2>Monitoring</h2>
+    <pre><code><span class="comment"># Node health check</span>
+curl http://localhost:4888/info
+
+<span class="comment"># Response:</span>
+{
+  <span class="string">"peerId"</span>:             <span class="string">"12D3KooW..."</span>,
+  <span class="string">"version"</span>:            <span class="string">"0.2.0"</span>,
+  <span class="string">"httpPort"</span>:           <span class="keyword">4888</span>,
+  <span class="string">"p2pPort"</span>:            <span class="keyword">6888</span>,
+  <span class="string">"connectedPeers"</span>:     <span class="keyword">3</span>,
+  <span class="string">"attestationsIssued"</span>: <span class="keyword">142</span>,
+  <span class="string">"proofHashesStored"</span>:  <span class="keyword">891</span>,
+  <span class="string">"uptime"</span>:             <span class="keyword">86400</span>
+}</code></pre>
+  </main>
+</div>
+</body>
+</html>

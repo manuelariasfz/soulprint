@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Soulprint Docs — Overview</title>
+<meta name="description" content="Complete documentation for Soulprint — decentralized KYC identity protocol for AI agents, MCP servers, and OpenClaw bots.">
+<link rel="stylesheet" href="shared.css">
+<link rel="canonical" href="https://soulprint.digital/docs/">
+</head>
+<body>
+<div class="topbar">
+  <a href="/" class="topbar-logo">🌀 Soulprint</a>
+  <div class="topbar-links">
+    <a href="https://github.com/manuelariasfz/soulprint">GitHub</a>
+    <a href="https://www.npmjs.com/package/soulprint">npm</a>
+    <a href="/">Home</a>
+  </div>
+</div>
+<div class="docs-layout">
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#7c6cf5"/><stop offset="100%" stop-color="#a78bfa"/>
+        </linearGradient></defs>
+        <circle cx="32" cy="26" r="18" fill="url(#g)"/>
+        <rect x="14" y="26" width="36" height="20" fill="url(#g)"/>
+        <circle cx="19" cy="48" r="5.5" fill="url(#g)"/>
+        <circle cx="32" cy="49" r="5.5" fill="url(#g)"/>
+        <circle cx="45" cy="48" r="5.5" fill="url(#g)"/>
+        <ellipse cx="25" cy="25" rx="4.5" ry="3" fill="#0a0a0f"/>
+        <ellipse cx="25" cy="25" rx="2.5" ry="1.8" fill="#ffffff"/>
+        <ellipse cx="39" cy="25" rx="4.5" ry="3" fill="#0a0a0f"/>
+        <ellipse cx="39" cy="25" rx="2.5" ry="1.8" fill="#ffffff"/>
+      </svg>
+      <span class="sidebar-logo-text">Soulprint Docs</span>
+    </div>
+    <nav>
+      <div class="sidebar-section">Getting Started</div>
+      <a href="index.html" class="active">Overview</a>
+      <a href="quickstart.html">Quick Start</a>
+      <div class="sidebar-section">Core Concepts</div>
+      <a href="verify.html">Identity Verification</a>
+      <a href="trust-score.html">Trust Score (0–100)</a>
+      <div class="sidebar-section">Integrations</div>
+      <a href="mcp.html">MCP Servers</a>
+      <a href="openclaw.html">OpenClaw Bots</a>
+      <div class="sidebar-section">Infrastructure</div>
+      <a href="validator.html">Validator Node</a>
+      <a href="api.html">REST API Reference</a>
+      <div class="sidebar-section">Ecosystem</div>
+      <a href="countries.html">Country Support</a>
+    </nav>
+  </aside>
+
+  <!-- CONTENT -->
+  <main class="content">
+    <div class="doc-hero">
+      <h1><span>Soulprint</span> Documentation</h1>
+      <p class="subtitle">Decentralized identity &amp; reputation for AI agents — open protocol, on-device proofs, zero PII uploaded.</p>
+    </div>
+
+    <h2>What is Soulprint?</h2>
+    <p>Soulprint is a decentralized identity layer that proves a <strong>real human</strong> is behind any AI agent — without sending biometric data to any server. It combines two signals into a single <strong>100-point trust score</strong>:</p>
+    <ul>
+      <li><strong>Identity score (0–80):</strong> derived from government ID + face match, verified locally via OCR and biometrics, optionally anchored by a privacy-preserving proof</li>
+      <li><strong>Bot reputation (0–20):</strong> assigned by the validator network based on observed agent behavior — good behavior earns attestations, spam/abuse loses them</li>
+    </ul>
+    <p>Every verified agent gets a <strong>DID (Decentralized Identifier)</strong> and a signed <strong>SPT (Soulprint Token)</strong> that any MCP server, OpenClaw bot, or REST API can verify in milliseconds — even offline.</p>
+
+    <h2>How It Works</h2>
+    <div class="steps">
+      <div class="step">
+        <div class="step-body">
+          <h3>Human verifies once</h3>
+          <p>The user runs <code>npx soulprint verify-me</code> on their device. OCR reads their ID document, InsightFace matches their selfie, and a privacy-preserving proof is generated — all locally. Result: a signed identity token stored on-device.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-body">
+          <h3>Agent carries the token</h3>
+          <p>The AI agent (OpenClaw bot, MCP client, CLI) includes the SPT token in its requests via <code>X-Soulprint</code> or <code>x-soulprint-token</code> headers. No credentials, no passwords — just the proof.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-body">
+          <h3>Service verifies &amp; gates access</h3>
+          <p>A Soulprint middleware (soulprint-mcp or soulprint-express) validates the token, checks the score, and grants or denies access to the protected tool or endpoint. Verification is instant — no network round-trip needed for cached tokens.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-body">
+          <h3>Validator network tracks reputation</h3>
+          <p>Validator nodes gossip attestations via a peer-to-peer mesh. Good behavior (diverse tool use, no spam) earns +1 attestation up to 20 points. Bad behavior (rate abuse) loses points. Reputation is decentralized — no central authority.</p>
+        </div>
+      </div>
+    </div>
+
+    <h2>Architecture: 7 npm Packages</h2>
+    <table>
+      <tr><th>Package</th><th>Role</th><th>Use when</th></tr>
+      <tr><td><code>soulprint</code></td><td>CLI</td><td>End users run <code>npx soulprint verify-me</code></td></tr>
+      <tr><td><code>soulprint-core</code></td><td>DID, tokens, attestations</td><td>Building custom identity logic</td></tr>
+      <tr><td><code>soulprint-verify</code></td><td>OCR + face recognition</td><td>On-demand local verification pipeline</td></tr>
+      <tr><td><code>soulprint-zkp</code></td><td>Proof prover &amp; verifier</td><td>Privacy-preserving proof generation</td></tr>
+      <tr><td><code>soulprint-network</code></td><td>HTTP validator + P2P node</td><td>Running a validator node</td></tr>
+      <tr><td><code>soulprint-mcp</code></td><td>MCP middleware</td><td>Protecting MCP server tools</td></tr>
+      <tr><td><code>soulprint-express</code></td><td>Express/Fastify middleware</td><td>Protecting REST APIs</td></tr>
+    </table>
+
+    <h2>Quick Navigation</h2>
+    <div class="card-grid">
+      <a class="card" href="quickstart.html">
+        <div class="card-icon">⚡</div>
+        <div class="card-title">Quick Start</div>
+        <div class="card-desc">Verify your identity and get your first token in 5 minutes</div>
+      </a>
+      <a class="card" href="mcp.html">
+        <div class="card-icon">🔌</div>
+        <div class="card-title">MCP Servers</div>
+        <div class="card-desc">Gate MCP tools behind identity requirements in 3 lines</div>
+      </a>
+      <a class="card" href="openclaw.html">
+        <div class="card-icon">🤖</div>
+        <div class="card-title">OpenClaw Bots</div>
+        <div class="card-desc">Add identity verification to any OpenClaw agent</div>
+      </a>
+      <a class="card" href="validator.html">
+        <div class="card-icon">🌐</div>
+        <div class="card-title">Validator Node</div>
+        <div class="card-desc">Run a node and earn validator reputation</div>
+      </a>
+      <a class="card" href="trust-score.html">
+        <div class="card-icon">💯</div>
+        <div class="card-title">Trust Score</div>
+        <div class="card-desc">Understand how the 0–100 score is calculated</div>
+      </a>
+      <a class="card" href="api.html">
+        <div class="card-icon">📡</div>
+        <div class="card-title">REST API</div>
+        <div class="card-desc">Full reference for the validator node HTTP API</div>
+      </a>
+      <a class="card" href="countries.html">
+        <div class="card-icon">🌍</div>
+        <div class="card-title">Countries</div>
+        <div class="card-desc">Supported documents and how to add your country</div>
+      </a>
+    </div>
+
+    <h2>License &amp; Links</h2>
+    <ul>
+      <li><span class="badge badge-green">MIT</span> Fully open source</li>
+      <li>GitHub: <a href="https://github.com/manuelariasfz/soulprint">manuelariasfz/soulprint</a></li>
+      <li>npm: <a href="https://www.npmjs.com/package/soulprint">soulprint</a> and 6 scoped packages</li>
+      <li>ClawHub: <a href="https://clawhub.ai/soulprint">clawhub.ai/soulprint</a></li>
+    </ul>
+  </main>
+</div>
+</body>
+</html>

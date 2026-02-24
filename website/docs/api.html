@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>REST API Reference — Soulprint Docs</title>
+<meta name="description" content="Full REST API reference for the Soulprint validator node — endpoints, request/response schemas, error codes.">
+<link rel="stylesheet" href="shared.css">
+</head>
+<body>
+<div class="topbar">
+  <a href="/" class="topbar-logo">🌀 Soulprint</a>
+  <div class="topbar-links"><a href="https://github.com/manuelariasfz/soulprint">GitHub</a><a href="/">Home</a></div>
+</div>
+<div class="docs-layout">
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#7c6cf5"/><stop offset="100%" stop-color="#a78bfa"/>
+        </linearGradient></defs>
+        <circle cx="32" cy="26" r="18" fill="url(#g)"/>
+        <rect x="14" y="26" width="36" height="20" fill="url(#g)"/>
+        <circle cx="19" cy="48" r="5.5" fill="url(#g)"/>
+        <circle cx="32" cy="49" r="5.5" fill="url(#g)"/>
+        <circle cx="45" cy="48" r="5.5" fill="url(#g)"/>
+        <ellipse cx="25" cy="25" rx="4.5" ry="3" fill="#0a0a0f"/>
+        <ellipse cx="25" cy="25" rx="2.5" ry="1.8" fill="#ffffff"/>
+        <ellipse cx="39" cy="25" rx="4.5" ry="3" fill="#0a0a0f"/>
+        <ellipse cx="39" cy="25" rx="2.5" ry="1.8" fill="#ffffff"/>
+      </svg>
+      <span class="sidebar-logo-text">Soulprint Docs</span>
+    </div>
+    <nav>
+      <div class="sidebar-section">Getting Started</div>
+      <a href="index.html">Overview</a><a href="quickstart.html">Quick Start</a>
+      <div class="sidebar-section">Core Concepts</div>
+      <a href="verify.html">Identity Verification</a><a href="trust-score.html">Trust Score (0–100)</a>
+      <div class="sidebar-section">Integrations</div>
+      <a href="mcp.html">MCP Servers</a><a href="openclaw.html">OpenClaw Bots</a>
+      <div class="sidebar-section">Infrastructure</div>
+      <a href="validator.html">Validator Node</a>
+      <a href="api.html" class="active">REST API Reference</a>
+      <div class="sidebar-section">Ecosystem</div>
+      <a href="countries.html">Country Support</a>
+    </nav>
+  </aside>
+  <main class="content">
+    <div class="doc-hero">
+      <h1>📡 REST API Reference</h1>
+      <p class="subtitle">All endpoints exposed by a running Soulprint validator node (default: <code>http://localhost:4888</code>).</p>
+    </div>
+
+    <!-- GET /info -->
+    <h2><span class="method method-get">GET</span> /info</h2>
+    <p>Returns node status and network statistics. No authentication required.</p>
+    <h4>Response</h4>
+    <pre><code>{
+  <span class="string">"peerId"</span>:             <span class="string">"12D3KooW..."</span>,
+  <span class="string">"version"</span>:            <span class="string">"0.2.0"</span>,
+  <span class="string">"httpPort"</span>:           <span class="keyword">4888</span>,
+  <span class="string">"p2pPort"</span>:            <span class="keyword">6888</span>,
+  <span class="string">"connectedPeers"</span>:     <span class="keyword">3</span>,
+  <span class="string">"attestationsIssued"</span>: <span class="keyword">142</span>,
+  <span class="string">"proofHashesStored"</span>:  <span class="keyword">891</span>,
+  <span class="string">"uptime"</span>:             <span class="keyword">86400</span>,
+  <span class="string">"multiaddrs"</span>: [<span class="string">"/ip4/0.0.0.0/tcp/6888/p2p/12D3KooW..."</span>]
+}</code></pre>
+
+    <!-- POST /verify -->
+    <h2><span class="method method-post">POST</span> /verify</h2>
+    <p>Verifies a Soulprint token and registers its proof hash for anti-replay. Returns the decoded token payload on success.</p>
+    <h4>Request Body</h4>
+    <pre><code>{ <span class="string">"token"</span>: <span class="string">"&lt;SPT token string&gt;"</span> }</code></pre>
+    <h4>Response (200 OK)</h4>
+    <pre><code>{
+  <span class="string">"valid"</span>:        <span class="keyword">true</span>,
+  <span class="string">"did"</span>:          <span class="string">"did:soulprint:abc123..."</span>,
+  <span class="string">"score"</span>:        <span class="keyword">72</span>,
+  <span class="string">"identity"</span>:    <span class="keyword">62</span>,
+  <span class="string">"reputation"</span>:  <span class="keyword">10</span>,
+  <span class="string">"country"</span>:     <span class="string">"CO"</span>,
+  <span class="string">"credentials"</span>: [<span class="string">"email"</span>, <span class="string">"document"</span>, <span class="string">"face_match"</span>],
+  <span class="string">"expiresAt"</span>:   <span class="string">"2026-08-24T10:00:00Z"</span>,
+  <span class="string">"firstSeen"</span>:   <span class="string">"2026-02-24T10:00:00Z"</span>
+}</code></pre>
+    <h4>Response (400 — expired or invalid)</h4>
+    <pre><code>{ <span class="string">"valid"</span>: <span class="keyword">false</span>, <span class="string">"error"</span>: <span class="string">"token expired"</span> }</code></pre>
+    <h4>Response (409 — replay detected)</h4>
+    <pre><code>{ <span class="string">"valid"</span>: <span class="keyword">false</span>, <span class="string">"error"</span>: <span class="string">"proof hash already registered (Sybil attempt)"</span> }</code></pre>
+
+    <!-- POST /reputation/attest -->
+    <h2><span class="method method-post">POST</span> /reputation/attest</h2>
+    <p>Issue a behavioral attestation for a DID. Requires operator authorization.</p>
+    <h4>Request Body</h4>
+    <pre><code>{
+  <span class="string">"did"</span>:        <span class="string">"did:soulprint:abc123..."</span>,
+  <span class="string">"delta"</span>:      <span class="keyword">1</span>,              <span class="comment">// +1 (positive) or -1 (negative)</span>
+  <span class="string">"reason"</span>:    <span class="string">"diverse_tool_use"</span>,  <span class="comment">// free-form label for audit log</span>
+  <span class="string">"operatorSig"</span>: <span class="string">"&lt;signature&gt;"</span>   <span class="comment">// signed by operator key</span>
+}</code></pre>
+    <h4>Response (200 OK)</h4>
+    <pre><code>{
+  <span class="string">"ok"</span>:        <span class="keyword">true</span>,
+  <span class="string">"did"</span>:       <span class="string">"did:soulprint:abc123..."</span>,
+  <span class="string">"newScore"</span>: <span class="keyword">11</span>,
+  <span class="string">"attestationId"</span>: <span class="string">"attest-uuid-..."</span>
+}</code></pre>
+
+    <!-- GET /reputation/:did -->
+    <h2><span class="method method-get">GET</span> /reputation/:did</h2>
+    <p>Returns the current bot reputation score for a DID.</p>
+    <h4>Response</h4>
+    <pre><code>{
+  <span class="string">"did"</span>:            <span class="string">"did:soulprint:abc123..."</span>,
+  <span class="string">"score"</span>:          <span class="keyword">12</span>,
+  <span class="string">"attestations"</span>:  <span class="keyword">4</span>,        <span class="comment">// total attestations received</span>
+  <span class="string">"positive"</span>:      <span class="keyword">3</span>,
+  <span class="string">"negative"</span>:      <span class="keyword">1</span>,
+  <span class="string">"lastUpdated"</span>:   <span class="string">"2026-02-24T14:00:00Z"</span>
+}</code></pre>
+
+    <!-- GET /proof-hash/:hash -->
+    <h2><span class="method method-get">GET</span> /proof-hash/:hash</h2>
+    <p>Checks if a proof hash has been registered (anti-replay lookup).</p>
+    <h4>Response</h4>
+    <pre><code>{
+  <span class="string">"hash"</span>:       <span class="string">"sha3-abc123..."</span>,
+  <span class="string">"registered"</span>: <span class="keyword">true</span>,
+  <span class="string">"firstSeen"</span>:  <span class="string">"2026-02-24T10:00:00Z"</span>,
+  <span class="string">"did"</span>:        <span class="string">"did:soulprint:abc123..."</span>   <span class="comment">// included if registered</span>
+}</code></pre>
+
+    <h2>Error Codes</h2>
+    <table>
+      <tr><th>HTTP</th><th>Error</th><th>Meaning</th></tr>
+      <tr><td>400</td><td><code>invalid_token</code></td><td>Token is malformed or signature invalid</td></tr>
+      <tr><td>400</td><td><code>token_expired</code></td><td>Token has passed its expiresAt date</td></tr>
+      <tr><td>401</td><td><code>unauthorized</code></td><td>Missing or invalid operator signature for attestation endpoints</td></tr>
+      <tr><td>409</td><td><code>replay_detected</code></td><td>Proof hash already registered — Sybil attempt blocked</td></tr>
+      <tr><td>429</td><td><code>rate_limited</code></td><td>Too many requests — retry after <code>Retry-After</code> header seconds</td></tr>
+      <tr><td>503</td><td><code>node_syncing</code></td><td>Node is still syncing with the P2P network on startup</td></tr>
+    </table>
+
+    <h2>Rate Limits</h2>
+    <table>
+      <tr><th>Endpoint</th><th>Default limit</th><th>Notes</th></tr>
+      <tr><td><code>GET /info</code></td><td>Unlimited</td><td>Health check endpoint</td></tr>
+      <tr><td><code>POST /verify</code></td><td>100/min per IP</td><td>Configurable via <code>SOULPRINT_RATE_LIMIT</code></td></tr>
+      <tr><td><code>POST /reputation/attest</code></td><td>60/min per operator key</td><td>Requires valid operator signature</td></tr>
+      <tr><td><code>GET /reputation/:did</code></td><td>200/min per IP</td><td>Read-only, cached</td></tr>
+      <tr><td><code>GET /proof-hash/:hash</code></td><td>200/min per IP</td><td>Read-only, cached</td></tr>
+    </table>
+  </main>
+</div>
+</body>
+</html>

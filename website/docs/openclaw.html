@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenClaw Bot Integration — Soulprint Docs</title>
+<meta name="description" content="Add Soulprint identity verification to any OpenClaw agent — install the ClawHub skill and start verifying users in seconds.">
+<link rel="stylesheet" href="shared.css">
+</head>
+<body>
+<div class="topbar">
+  <a href="/" class="topbar-logo">🌀 Soulprint</a>
+  <div class="topbar-links">
+    <a href="https://github.com/manuelariasfz/soulprint">GitHub</a>
+    <a href="https://clawhub.ai/soulprint">ClawHub</a>
+    <a href="/">Home</a>
+  </div>
+</div>
+<div class="docs-layout">
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#7c6cf5"/><stop offset="100%" stop-color="#a78bfa"/>
+        </linearGradient></defs>
+        <circle cx="32" cy="26" r="18" fill="url(#g)"/>
+        <rect x="14" y="26" width="36" height="20" fill="url(#g)"/>
+        <circle cx="19" cy="48" r="5.5" fill="url(#g)"/>
+        <circle cx="32" cy="49" r="5.5" fill="url(#g)"/>
+        <circle cx="45" cy="48" r="5.5" fill="url(#g)"/>
+        <ellipse cx="25" cy="25" rx="4.5" ry="3" fill="#0a0a0f"/>
+        <ellipse cx="25" cy="25" rx="2.5" ry="1.8" fill="#ffffff"/>
+        <ellipse cx="39" cy="25" rx="4.5" ry="3" fill="#0a0a0f"/>
+        <ellipse cx="39" cy="25" rx="2.5" ry="1.8" fill="#ffffff"/>
+      </svg>
+      <span class="sidebar-logo-text">Soulprint Docs</span>
+    </div>
+    <nav>
+      <div class="sidebar-section">Getting Started</div>
+      <a href="index.html">Overview</a>
+      <a href="quickstart.html">Quick Start</a>
+      <div class="sidebar-section">Core Concepts</div>
+      <a href="verify.html">Identity Verification</a>
+      <a href="trust-score.html">Trust Score (0–100)</a>
+      <div class="sidebar-section">Integrations</div>
+      <a href="mcp.html">MCP Servers</a>
+      <a href="openclaw.html" class="active">OpenClaw Bots</a>
+      <div class="sidebar-section">Infrastructure</div>
+      <a href="validator.html">Validator Node</a>
+      <a href="api.html">REST API Reference</a>
+      <div class="sidebar-section">Ecosystem</div>
+      <a href="countries.html">Country Support</a>
+    </nav>
+  </aside>
+  <main class="content">
+    <div class="doc-hero">
+      <h1>🤖 OpenClaw Bot Integration</h1>
+      <p class="subtitle">Add identity verification to any OpenClaw agent with one CLI command.</p>
+    </div>
+
+    <h2>Install the Soulprint Skill</h2>
+    <p>OpenClaw agents use the ClawHub skill registry. Install Soulprint into any agent workspace:</p>
+    <pre><code>clawhub install soulprint</code></pre>
+    <p>This adds the <code>skills/soulprint/SKILL.md</code> file to your workspace. The agent will automatically discover and use it for Soulprint-related tasks.</p>
+
+    <div class="callout callout-info">
+      <div class="callout-title">What is a ClawHub skill?</div>
+      Skills are markdown instruction files that teach OpenClaw agents how to use specific tools, APIs, and protocols. When the agent needs to do something related to identity verification, it reads the Soulprint skill and follows its instructions.
+    </div>
+
+    <h2>What the Skill Enables</h2>
+    <p>Once installed, your OpenClaw agent can:</p>
+    <ul>
+      <li>Guide users through <code>npx soulprint verify-me</code> step by step</li>
+      <li>Check a user's trust score and explain what each credential means</li>
+      <li>Help users renew expired tokens</li>
+      <li>Launch and monitor a validator node</li>
+      <li>Integrate Soulprint middleware into projects being built by the agent</li>
+      <li>Debug token errors and score issues</li>
+      <li>Run the full verification flow as part of an onboarding workflow</li>
+    </ul>
+
+    <h2>Agent Workflow Examples</h2>
+
+    <h3>Example 1 — Verify a new user</h3>
+    <p>A user messages your OpenClaw bot: <em>"I want to verify my identity"</em></p>
+    <pre><code><span class="comment">// Agent detects Soulprint intent → reads skill → responds:</span>
+
+<span class="string">"Sure! Let's verify your identity with Soulprint.
+Run this in your terminal:
+
+  npx soulprint install-deps   ← one-time setup (~200 MB)
+  npx soulprint verify-me      ← interactive verification
+
+You'll need your government ID and a camera.
+Everything runs locally — nothing is uploaded.
+
+Once done, send me the output of: npx soulprint show"</span></code></pre>
+
+    <h3>Example 2 — Check identity before an action</h3>
+    <p>Build an agent that gates premium features behind identity:</p>
+    <pre><code><span class="comment">// In your agent's logic (via MCP tool gating):</span>
+<span class="comment">// 1. User requests a premium action</span>
+<span class="comment">// 2. Agent checks if token exists and score is sufficient</span>
+<span class="comment">// 3. If not → guides user through verify-me</span>
+<span class="comment">// 4. If yes → proceeds with the action</span>
+
+<span class="keyword">const</span> check = <span class="keyword">await</span> exec(<span class="string">"npx soulprint show --json"</span>);
+<span class="keyword">const</span> token = JSON.parse(check.stdout);
+
+<span class="keyword">if</span> (token.score &lt; <span class="keyword">60</span>) {
+  reply(<span class="string">"Your current score is "</span> + token.score + <span class="string">"/100. To access this feature, you need 60+. Run: npx soulprint verify-me"</span>);
+} <span class="keyword">else</span> {
+  <span class="comment">// proceed with premium action</span>
+}</code></pre>
+
+    <h3>Example 3 — Auto-run validator node</h3>
+    <p>An OpenClaw agent managing infrastructure can auto-start a validator node:</p>
+    <pre><code><span class="comment">// Agent prompt: "Start a Soulprint validator node in background"</span>
+
+<span class="comment">// Agent reads the soulprint skill, then executes:</span>
+exec(<span class="string">"npx soulprint node"</span>, { background: <span class="keyword">true</span> });
+
+<span class="comment">// Monitor the node:</span>
+exec(<span class="string">"curl http://localhost:4888/info"</span>);
+<span class="comment">// Returns: { peerId, score, attestationsIssued, peers }</span></code></pre>
+
+    <h3>Example 4 — Integrate into a project being built</h3>
+    <p>When an agent is helping build a Node.js app and the user says "add identity gates":</p>
+    <pre><code><span class="comment">// Agent installs the package:</span>
+exec(<span class="string">"npm install soulprint-express"</span>);
+
+<span class="comment">// Agent adds middleware to app.ts:</span>
+writeFile(<span class="string">"src/middleware/identity.ts"</span>, <span class="string">`
+import { soulprintMiddleware } from "soulprint-express";
+export const requireIdentity = soulprintMiddleware({ minScore: 60 });
+`</span>);
+
+<span class="comment">// Agent applies it to protected routes automatically</span></code></pre>
+
+    <h2>Multi-Agent Scenarios</h2>
+    <p>Soulprint works across multi-agent systems. A parent agent can pass identity tokens to sub-agents:</p>
+    <pre><code><span class="comment">// Parent agent receives user token</span>
+<span class="keyword">const</span> userToken = req.headers[<span class="string">"x-soulprint-token"</span>];
+
+<span class="comment">// Spawn sub-agent with identity context</span>
+sessions_spawn({
+  task: <span class="string">"Process this job application: "</span> + applicationData,
+  env: { SOULPRINT_TOKEN: userToken }
+});
+
+<span class="comment">// Sub-agent can verify the token independently:
+// clawhub install soulprint → reads SOULPRINT_TOKEN → verifies identity</span></code></pre>
+
+    <h2>OpenClaw + mcp-colombia-hub</h2>
+    <p>The <code>mcp-colombia-hub</code> MCP server has full Soulprint integration. Install both skills for a complete Colombian services + identity stack:</p>
+    <pre><code>clawhub install soulprint
+clawhub install mcp-colombia</code></pre>
+    <p>With both installed, your agent can:</p>
+    <ul>
+      <li>Search MercadoLibre products — open to all</li>
+      <li>Search hotels &amp; flights — open to all</li>
+      <li>Compare CDTs and simulate credits — requires score ≥ 40</li>
+      <li>Apply for jobs (<code>trabajo_aplicar</code>) — requires score ≥ 95 + document verified</li>
+    </ul>
+
+    <h2>Environment Variables</h2>
+    <table>
+      <tr><th>Variable</th><th>Description</th></tr>
+      <tr><td><code>SOULPRINT_TOKEN</code></td><td>Pre-loaded identity token (bypasses CLI verification for service accounts)</td></tr>
+      <tr><td><code>SOULPRINT_VALIDATOR_URL</code></td><td>Custom validator node URL (default: auto-discovery)</td></tr>
+      <tr><td><code>SOULPRINT_OFFLINE</code></td><td>Set to <code>1</code> to skip network checks and verify signatures only</td></tr>
+    </table>
+
+    <h2>Useful Commands for Agents</h2>
+    <pre><code><span class="comment"># Check if user is verified</span>
+npx soulprint show --json
+
+<span class="comment"># Verify identity interactively</span>
+npx soulprint verify-me
+
+<span class="comment"># Renew an expiring token</span>
+npx soulprint renew
+
+<span class="comment"># Check a specific DID's reputation</span>
+npx soulprint reputation &lt;did&gt;
+
+<span class="comment"># Start validator node</span>
+npx soulprint node
+
+<span class="comment"># Verify a raw token string</span>
+npx soulprint verify-token &lt;token&gt;</code></pre>
+
+    <h2>Skill Auto-Detection</h2>
+    <p>OpenClaw agents auto-load skills when the user's request matches the skill description. The Soulprint skill is triggered by requests like:</p>
+    <ul>
+      <li><em>"Verify my identity for this AI agent"</em></li>
+      <li><em>"Run a Soulprint validator node"</em></li>
+      <li><em>"Add identity verification to my MCP server"</em></li>
+      <li><em>"Check the reputation score of a bot or DID"</em></li>
+      <li><em>"Generate a privacy proof from my ID"</em></li>
+      <li><em>"Issue or verify an SPT token"</em></li>
+    </ul>
+  </main>
+</div>
+</body>
+</html>
