@@ -1,234 +1,323 @@
 # Soulprint — Architecture (v0.1.3)
 
-> Complete technical reference for the Soulprint Identity Protocol.  
-> For the formal protocol spec, see [specs/SIP-v0.1.md](specs/SIP-v0.1.md).
+> Diagramas C4 + referencia técnica del protocolo.  
+> Spec formal: [specs/SIP-v0.1.md](specs/SIP-v0.1.md)
 
 ---
 
-## Table of Contents
+## Tabla de contenidos
 
-1. [Overview](#1-overview)
-2. [Trust Score Model](#2-trust-score-model)
-3. [Component Map](#3-component-map)
-4. [Identity Layer — ZK Verification](#4-identity-layer--zk-verification)
-5. [Token Format — SPT](#5-token-format--spt)
-6. [Bot Reputation Layer](#6-bot-reputation-layer)
-7. [Validator Network](#7-validator-network)
-8. [P2P Gossip Protocol](#8-p2p-gossip-protocol)
-9. [Multi-Country Registry](#9-multi-country-registry)
-10. [SDK Layer](#10-sdk-layer)
-11. [Security Model](#11-security-model)
-12. [Data Flow — Full Journey](#12-data-flow--full-journey)
-13. [Package Dependency Graph](#13-package-dependency-graph)
-
----
-
-## 1. Overview
-
-Soulprint is a **decentralized KYC identity protocol** for AI agents. It answers one question:
-
-> **Is there a verified human behind this bot — and has it behaved well?**
-
-Without revealing who the human is.
-
-### Core principles
-
-| Principle | Implementation |
-|---|---|
-| **No PII stored** | Raw biometrics deleted after ZK proof generation |
-| **No central authority** | P2P validator network; anyone can run a node |
-| **No paid APIs** | All verification runs locally (Tesseract, InsightFace) |
-| **Sybil resistant** | Poseidon nullifier — one person = one nullifier, always |
-| **Composable** | 7 npm packages; use only what you need |
+1. [C4 — Level 1: System Context](#c4--level-1-system-context)
+2. [C4 — Level 2: Containers](#c4--level-2-containers)
+3. [C4 — Level 3: Components — soulprint-core](#c4--level-3-components--soulprint-core)
+4. [C4 — Level 3: Components — soulprint-network](#c4--level-3-components--soulprint-network)
+5. [Trust Score Model](#trust-score-model)
+6. [ZK Verification Pipeline](#zk-verification-pipeline)
+7. [Token Format — SPT](#token-format--spt)
+8. [Bot Reputation Layer](#bot-reputation-layer)
+9. [P2P Gossip Protocol](#p2p-gossip-protocol)
+10. [Multi-Country Registry](#multi-country-registry)
+11. [Security Threat Matrix](#security-threat-matrix)
+12. [Data Flow — Full Journey](#data-flow--full-journey)
+13. [Package Dependency Graph](#package-dependency-graph)
 
 ---
 
-## 2. Trust Score Model
+## C4 — Level 1: System Context
+
+> ¿Quién interactúa con Soulprint y con qué sistemas externos se conecta?
+
+```mermaid
+C4Context
+  title System Context — Soulprint Identity Protocol
+
+  Person(human, "Human Principal", "Person who owns and\ncontrols the AI bot")
+  Person(devOps, "Service Operator", "Developer running a\nverified MCP/REST service")
+
+  System_Boundary(sp, "Soulprint") {
+    System(soulprint, "Soulprint Protocol", "Decentralized KYC identity\nfor AI agents. ZK proofs,\nreputation, P2P validators.")
+  }
+
+  System_Ext(validatorNet, "Validator Network", "P2P HTTP nodes storing\nnullifiers and reputation.\nAnyone can run a node.")
+  System_Ext(services, "Verified Services", "MCP servers, REST APIs\nusing soulprint-mcp or\nsoulprint-express (e.g. mcp-colombia-hub)")
+  System_Ext(aiBot, "AI Bot / Agent", "Claude, GPT, AutoGPT, etc.\nOperates on behalf of\nthe human principal")
+  System_Ext(localML, "Local ML Models", "Tesseract OCR + InsightFace.\nOn-demand, killed after use.\nNo data leaves device.")
+
+  Rel(human, soulprint, "Verifies identity once", "CLI: npx soulprint verify-me")
+  Rel(soulprint, localML, "OCR + face match", "Python subprocess, local only")
+  Rel(soulprint, validatorNet, "Broadcast nullifier + ZK proof", "HTTP POST /verify")
+  Rel(aiBot, services, "Calls tools with SPT token", "MCP / HTTP + X-Soulprint header")
+  Rel(services, soulprint, "Verify token + issue attestations", "soulprint-mcp / soulprint-express")
+  Rel(services, validatorNet, "Submit behavioral attestations", "HTTP POST /reputation/attest")
+  Rel(validatorNet, validatorNet, "Gossip attestations P2P", "HTTP fire-and-forget")
+  Rel(devOps, soulprint, "Protects API with middleware", "npm i soulprint-mcp")
+
+  UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="1")
+```
+
+---
+
+## C4 — Level 2: Containers
+
+> ¿Cuáles son los bloques de construcción técnicos dentro de Soulprint?
+
+```mermaid
+C4Container
+  title Container Diagram — Soulprint v0.1.3
+
+  Person(human, "Human Principal", "Runs CLI to verify identity")
+  Person(bot, "AI Bot", "Includes SPT in tool calls")
+
+  System_Boundary(sp, "Soulprint") {
+
+    Container(cli, "soulprint (CLI)", "Node.js / TypeScript",
+      "verify-me · show · renew · node · install-deps\nnpx soulprint <command>")
+
+    Container(core, "soulprint-core", "TypeScript library",
+      "DID keypairs · SPT tokens · attestations\nreputation engine · score calculator\nEd25519 + Poseidon")
+
+    Container(verify, "soulprint-verify", "TypeScript + Python",
+      "Document OCR (Tesseract)\nFace match (InsightFace)\nCountry registry (7 countries)\nMRZ ICAO 9303 validation")
+
+    Container(zkp, "soulprint-zkp", "TypeScript + Circom",
+      "Circom 2.1.8 circuit (844 constraints)\nsnarkjs Groth16 prover/verifier\nProof: ~564ms · Verify: ~25ms")
+
+    Container(network, "soulprint-network", "Node.js HTTP",
+      "Validator node REST API\nReputation store · Sybil registry\nP2P gossip · Rate limiting")
+
+    Container(mcp, "soulprint-mcp", "TypeScript",
+      "MCP server middleware (3 lines)\nCapabilities-based token extraction\nScore-gated tool access")
+
+    Container(express, "soulprint-express", "TypeScript",
+      "Express / Fastify middleware\nreq.soulprint context injection\nMinScore enforcement")
+
+    ContainerDb(fs, "Local Filesystem", "JSON files (mode 0600)",
+      "~/.soulprint/keypair.json\n~/.soulprint/token.spt\n~/.soulprint/node/reputation.json\n~/.soulprint/node/nullifiers.json\n~/.soulprint/node/peers.json")
+  }
+
+  System_Ext(validatorNet, "Validator Network", "Other soulprint-network nodes")
+
+  Rel(human, cli, "Runs verification", "stdio")
+  Rel(cli, verify, "OCR + face match", "TypeScript import")
+  Rel(cli, zkp, "Generate ZK proof", "TypeScript import")
+  Rel(cli, core, "Issue SPT token", "TypeScript import")
+  Rel(cli, network, "Start validator node", "TypeScript import")
+  Rel(verify, fs, "Read/write keys", "Node.js fs")
+  Rel(core, fs, "Persist keypair + token", "Node.js fs")
+  Rel(network, fs, "Persist reputation + peers", "Node.js fs")
+  Rel(network, validatorNet, "Gossip attestations", "HTTP fire-and-forget")
+  Rel(bot, mcp, "Calls with SPT in capabilities", "MCP protocol")
+  Rel(bot, express, "Calls with X-Soulprint header", "HTTP")
+  Rel(mcp, core, "Verify token + extract ctx", "TypeScript import")
+  Rel(express, core, "Verify token + extract ctx", "TypeScript import")
+  Rel(mcp, network, "Submit attestations", "HTTP POST /reputation/attest")
+
+  UpdateLayoutConfig($c4ShapeInRow="4", $c4BoundaryInRow="1")
+```
+
+---
+
+## C4 — Level 3: Components — soulprint-core
+
+> Los primitivos que usan todos los demás paquetes.
+
+```mermaid
+C4Component
+  title Component Diagram — soulprint-core
+
+  Container_Boundary(core, "soulprint-core") {
+
+    Component(did, "DID Manager", "did.ts",
+      "generateKeypair() → Ed25519\nDID = did:key:z6Mk + bs58(pubkey)\nloadKeypair(path) · saveKeypair(path)")
+
+    Component(token, "Token Engine", "token.ts",
+      "createToken(kp, nullifier, creds, opts)\ndecodeToken(b64) → SoulprintToken | null\nverifySig(token) → boolean\nexpiry: 24h sliding window")
+
+    Component(attest, "Attestation Manager", "attestation.ts",
+      "createAttestation(kp, targetDid, val, ctx)\nverifyAttestation(att) → boolean\nEd25519 sign/verify\nAge check (<1h)")
+
+    Component(rep, "Reputation Engine", "reputation.ts",
+      "computeReputation(atts[], base=10)\nfilter: valid sigs + dedup\nscore = clamp(base + sum, 0, 20)\ndefaultReputation() → score=10")
+
+    Component(score, "Score Calculator", "score.ts",
+      "calculateTotalScore(creds, botRep)\nidentityScore = sum(CREDENTIAL_WEIGHTS)\ntotal = clamp(identity + botRep, 0, 100)\nCREDENTIAL_WEIGHTS: {Email:8, Phone:12, ...}")
+
+    Component(crypto, "Crypto Primitives", "crypto.ts",
+      "@noble/ed25519 — sign/verify\nposeidon-lite — hash\nbs58 — base58 encode/decode\nrandomBytes — salt generation")
+  }
+
+  Container(cli, "soulprint (CLI)", "", "")
+  Container(verify, "soulprint-verify", "", "")
+  Container(zkp, "soulprint-zkp", "", "")
+  Container(network, "soulprint-network", "", "")
+  Container(mcp, "soulprint-mcp", "", "")
+  Container(express, "soulprint-express", "", "")
+
+  Rel(did, crypto, "Uses Ed25519 keygen", "")
+  Rel(token, did, "Signs with DID keypair", "")
+  Rel(token, crypto, "Ed25519 sign/verify", "")
+  Rel(attest, crypto, "Ed25519 sign/verify", "")
+  Rel(rep, attest, "Calls verifyAttestation", "")
+  Rel(score, rep, "Reads botRep.score", "")
+
+  Rel(cli, did, "generateKeypair()", "")
+  Rel(cli, token, "createToken()", "")
+  Rel(verify, did, "loadKeypair()", "")
+  Rel(zkp, token, "embed proof in token", "")
+  Rel(network, rep, "computeReputation()", "")
+  Rel(network, attest, "verifyAttestation()", "")
+  Rel(mcp, token, "decodeToken() · verifySig()", "")
+  Rel(mcp, score, "check minScore", "")
+  Rel(express, token, "decodeToken() · verifySig()", "")
+
+  UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="1")
+```
+
+---
+
+## C4 — Level 3: Components — soulprint-network
+
+> El nodo validador: cómo guarda y propaga la reputación.
+
+```mermaid
+C4Component
+  title Component Diagram — soulprint-network (Validator Node)
+
+  Container_Boundary(net, "soulprint-network") {
+
+    Component(api, "REST API", "node.ts · Express",
+      "GET  /health\nPOST /verify\nGET  /reputation/:did\nPOST /reputation/attest\nPOST /peers/register\nGET  /peers")
+
+    Component(repStore, "Reputation Store", "reputation.ts",
+      "loadReputation() / saveReputation()\ngetReputation(did) → BotReputation\napplyAttestation(att)\nMap<DID → { score, attestations[], last_updated }>")
+
+    Component(sybil, "Sybil Registry", "sybil.ts",
+      "registerNullifier(nullifier, did)\ncheckNullifier(nullifier) → did | null\nEnforces: 1 nullifier = 1 DID\nPrevents same person registering twice")
+
+    Component(gossip, "P2P Gossip", "gossip.ts",
+      "gossipAttestation(att, origin)\nFetch peers from peers.json\nPOST att to each peer (fire-and-forget)\nSkip origin peer (anti-echo)\nX-Gossip:1 header = no re-gossip")
+
+    Component(peerMgr, "Peer Manager", "peers.ts",
+      "registerPeer(url)\ngetPeers() → string[]\nloadPeers() / savePeers()\nstored at ~/.soulprint/node/peers.json")
+
+    Component(rateLimit, "Rate Limiter", "middleware.ts",
+      "/attest   → 10 req/min/IP\n/verify   → 30 req/min/IP\n/reputation → 60 req/min/IP\nexpress-rate-limit")
+  }
+
+  Container_Ext(peers, "Peer Nodes", "", "Other soulprint-network instances")
+  Container(core, "soulprint-core", "", "")
+  ContainerDb(fs, "Filesystem", "JSON", "~/.soulprint/node/")
+
+  Rel(api, rateLimit, "All routes protected", "Express middleware")
+  Rel(api, repStore, "Query/update reputation", "")
+  Rel(api, sybil, "Check on /verify", "")
+  Rel(api, gossip, "Trigger on /attest", "")
+  Rel(api, peerMgr, "Read/write on /peers", "")
+  Rel(repStore, core, "verifyAttestation()", "")
+  Rel(repStore, fs, "reputation.json", "")
+  Rel(sybil, fs, "nullifiers.json", "")
+  Rel(peerMgr, fs, "peers.json", "")
+  Rel(gossip, peerMgr, "Fetch peer list", "")
+  Rel(gossip, peers, "HTTP POST /reputation/attest", "fire-and-forget")
+
+  UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="1")
+```
+
+---
+
+## Trust Score Model
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                  TRUST SCORE  (0–100)                   │
-│                                                          │
-│   Identity Score (0–80)     +   Bot Reputation (0–20)   │
-│   ─────────────────────         ──────────────────────  │
-│   ZK-verified credentials       Behavioral attestations │
-│   from real-world documents      from verified services  │
-└─────────────────────────────────────────────────────────┘
+Total Score (0–100) = Identity Score (0–80) + Bot Reputation (0–20)
 ```
 
-### Identity credentials
+### Credential weights
 
-| Credential | Points | Verification method |
+| Credential | Points | Method |
 |---|---|---|
-| `EmailVerified` | 8 | Email confirmation link |
+| `EmailVerified` | 8 | Confirmation link |
 | `PhoneVerified` | 12 | SMS OTP |
-| `GitHubLinked` | 16 | GitHub OAuth callback |
-| `DocumentVerified` | 20 | Tesseract OCR + ICAO 9303 MRZ check digits |
-| `FaceMatch` | 16 | InsightFace cosine similarity ≥ 0.6 |
-| `BiometricBound` | 8 | Ed25519 keypair bound to device |
-| **Maximum** | **80** | |
+| `GitHubLinked` | 16 | OAuth |
+| `DocumentVerified` | 20 | Tesseract OCR + ICAO 9303 MRZ |
+| `FaceMatch` | 16 | InsightFace cosine ≥ 0.6 |
+| `BiometricBound` | 8 | Ed25519 device binding |
+| **Máximo** | **80** | |
 
-### Bot reputation tiers
+### Access levels
 
-| Score | Tier | Meaning |
+| Total | Level | Acceso típico |
 |---|---|---|
-| 0–9 | Penalized | Abuse history across services |
-| 10 | Neutral | New bot, no behavioral history |
-| 11–15 | Established | Verified activity on multiple services |
-| 16–20 | Trusted | Excellent track record |
+| 0–17 | Anonymous | Solo lectura, búsquedas |
+| 18–59 | Partial | API estándar |
+| 60–94 | KYCFull | Integraciones avanzadas |
+| **95–100** | **Premium** | **Endpoints de alta confianza** |
 
-### Access levels by total score
+### Reputación
 
-| Total | Level | Typical access |
+| Score | Estado | Significado |
 |---|---|---|
-| 0–17 | Anonymous | Read-only, basic search |
-| 18–35 | Partial | Standard API calls |
-| 36–59 | Partial KYC | Document-gated features |
-| 60–94 | KYCFull | Advanced integrations |
-| **95–100** | **Premium** | **High-trust gated endpoints** |
+| 0–9 | Penalizado | Historial de abuso |
+| 10 | Neutral | Bot nuevo, sin historial |
+| 11–15 | Establecido | Actividad verificada |
+| 16–20 | Confiable | Track record excelente |
 
 ---
 
-## 3. Component Map
+## ZK Verification Pipeline
 
 ```
-                        ┌──────────────────────────────────────────────────┐
-                        │              soulprint (CLI)                     │
-                        │  verify-me · show · renew · node · install-deps  │
-                        └────────────────┬─────────────────────────────────┘
-                                         │ uses
-              ┌──────────────────────────┼───────────────────────────┐
-              ▼                          ▼                           ▼
-   ┌─────────────────┐       ┌─────────────────┐        ┌─────────────────┐
-   │ soulprint-verify│       │  soulprint-zkp  │        │  soulprint-core │
-   │                 │       │                 │        │                 │
-   │ Tesseract OCR   │──────▶│ Circom circuit  │──────▶ │ DID keypair     │
-   │ InsightFace     │       │ snarkjs Groth16 │        │ Ed25519 signing │
-   │ EXIF/CLAHE      │       │ 844 constraints │        │ SPT token       │
-   │ ICAO MRZ check  │       │ 564ms prove     │        │ Attestations    │
-   │ Country registry│       │ 25ms verify     │        │ Score compute   │
-   └─────────────────┘       └─────────────────┘        └────────┬────────┘
-                                                                  │
-              ┌───────────────────────────────────────────────────┤
-              ▼                                                   ▼
-   ┌─────────────────┐                               ┌─────────────────────┐
-   │soulprint-network│◀──── P2P gossip ─────────────▶│soulprint-network    │
-   │                 │                               │  (another node)     │
-   │ REST API        │                               │                     │
-   │ /verify         │                               │ Shared reputation   │
-   │ /reputation/:did│                               │ Shared nullifiers   │
-   │ /peers          │                               └─────────────────────┘
-   │ /attest         │
-   │ Persistence     │
-   │ ~/.soulprint/   │
-   └─────────────────┘
-              ▲                    ▲
-              │                   │
-   ┌──────────┴────────┐  ┌───────┴──────────┐
-   │  soulprint-mcp    │  │ soulprint-express │
-   │                   │  │                  │
-   │ MCP middleware    │  │ Express/Fastify   │
-   │ server.use(...)   │  │ app.use(...)      │
-   │ capabilities      │  │ req.soulprint     │
-   └───────────────────┘  └──────────────────┘
+Device local (nada sale del dispositivo)
+─────────────────────────────────────────────────────────────────────
+
+  imagen_cedula.jpg ──▶ Tesseract OCR
+                         └─▶ MRZ line 1 + line 2
+                              └─▶ icaoCheckDigit() (7-3-1 mod 10)
+                                   └─▶ { cedula_num, fecha_nac }
+
+  selfie.jpg ──▶ CLAHE pre-process (LAB channel L, clipLimit=2.0)
+                └─▶ InsightFace embedding [512 dims]
+                     └─▶ tomar 32 primeras dimensiones
+                          └─▶ round(dim, 1)  ← absorbe ruido biométrico
+                               └─▶ face_key = Poseidon_iterativo(dims)
+
+  Poseidon(cedula_num, fecha_nac, face_key) ──▶ nullifier
+
+  Circom circuit soulprint_identity.circom
+    private: { cedula_num, fecha_nac, face_key, salt }
+    public:  { nullifier, context_tag }
+    constraint: Poseidon(private) == nullifier
+    → snarkjs.groth16.prove(wasm, zkey)
+    → { proof, publicSignals }   (~564ms)
+
+  Ed25519 DID keypair (generar o cargar de ~/.soulprint/keypair.json)
+  → createToken(kp, nullifier, credentials, { zkp: proof })
+  → ~/.soulprint/token.spt
+
+  InsightFace process killed → embeddings liberados de memoria
+─────────────────────────────────────────────────────────────────────
 ```
 
 ---
 
-## 4. Identity Layer — ZK Verification
-
-### Step-by-step local verification
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                    LOCAL DEVICE (never leaves)                      │
-│                                                                     │
-│  1. IMAGE PREPROCESSING                                             │
-│     selfie.jpg ──▶ fix_exif_rotation()                              │
-│                 ──▶ apply_clahe() (LAB channel L, clipLimit=2.0)    │
-│                 ──▶ resize if > 1920px                              │
-│                                                                     │
-│  2. DOCUMENT OCR  (Tesseract)                                       │
-│     cedula.jpg ──▶ extract MRZ lines 1 & 2                         │
-│                ──▶ icaoCheckDigit() validates:                      │
-│                       line1: document number (weight 7-3-1 mod 10)  │
-│                       line2: DOB, expiry                            │
-│                ──▶ parseMRZ() → { cedula_num, fecha_nac, ... }      │
-│                                                                     │
-│  3. FACE MATCH  (InsightFace, spawned on-demand, killed after)      │
-│     selfie ──▶ embedding[512] ──▶ first 32 dims                    │
-│     doc    ──▶ embedding[512] ──▶ first 32 dims                    │
-│     cosine_similarity(emb1, emb2) ≥ 0.6  ──▶ pass                  │
-│                                                                     │
-│  4. FACE KEY DERIVATION  (deterministic across devices)             │
-│     face_key = Poseidon_iterative(emb[0..31], step=0.1)            │
-│     Same face ±noise → same face_key → same nullifier              │
-│                                                                     │
-│  5. ZK PROOF GENERATION  (Circom 2.1.8 + snarkjs Groth16)          │
-│     Private inputs: cedula_num, fecha_nac, face_key, salt          │
-│     Public  inputs: nullifier, context_tag                         │
-│     Circuit: Poseidon(cedula, fecha_nac, face_key) == nullifier     │
-│     Output:  { proof: {...}, publicSignals: [nullifier, tag] }      │
-│     Time: ~564ms on a laptop                                        │
-│                                                                     │
-│  6. TOKEN ISSUANCE                                                  │
-│     DID keypair = Ed25519 (generated once, stored at               │
-│                   ~/.soulprint/keypair.json, mode 0600)            │
-│     SPT = sign({ did, nullifier, credentials, score,               │
-│                  bot_rep, expires: now+24h }, privateKey)           │
-│     Store at ~/.soulprint/token.spt                                │
-│                                                                     │
-│  7. BIOMETRIC PURGE                                                 │
-│     InsightFace process killed                                      │
-│     Raw embeddings freed from memory                               │
-│     Only token.spt remains                                         │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-### ZK Circuit — soulprint_identity.circom
-
-```
-Inputs (private):
-  cedula_num   [64-bit]  — ID number from MRZ
-  fecha_nac    [32-bit]  — birthdate YYMMDD from MRZ
-  face_key     [252-bit] — Poseidon hash of face embedding
-  salt         [252-bit] — random per verification
-
-Inputs (public):
-  nullifier    [252-bit] — Poseidon(cedula, fecha_nac, face_key)
-  context_tag  [252-bit] — service-specific binding (anti-replay)
-
-Constraints: 844
-Proving key:  soulprint_identity_final.zkey
-Verify key:   verification_key.json
-Algorithm:    Groth16 (BN128 curve)
-Proof time:   ~564ms
-Verify time:  ~25ms (offline)
-```
-
----
-
-## 5. Token Format — SPT
-
-The **Soulprint Token (SPT)** is a base64url-encoded JSON payload signed with Ed25519.
+## Token Format — SPT
 
 ```typescript
 interface SoulprintToken {
-  // Identity
+  // Identidad
   did:            string;       // "did:key:z6Mk..." — Ed25519 public key
-  nullifier:      string;       // "0x..." — Poseidon hash, unique per human
+  nullifier:      string;       // Poseidon hash — único por humano
   credentials:    string[];     // ["DocumentVerified","FaceMatch",...]
 
   // Scores
-  identity_score: number;       // 0–80 (sum of credential weights)
-  score:          number;       // 0–100 (identity_score + bot_rep.score)
-  level:          string;       // "Anonymous"|"EmailOnly"|"KYCPartial"|"KYCFull"
+  identity_score: number;       // 0–80
+  score:          number;       // 0–100 (identity + bot_rep)
+  level:          string;       // "KYCFull" | "KYCPartial" | etc.
 
-  // Reputation
+  // Reputación
   bot_rep: {
-    score:        number;       // 0–20 (behavioral attestations, default=10)
-    attestations: number;       // total received
-    last_updated: number;       // unix timestamp
+    score:        number;       // 0–20 (default=10)
+    attestations: number;
+    last_updated: number;
   };
 
   // ZK Proof
@@ -237,351 +326,192 @@ interface SoulprintToken {
     publicSignals: string[];    // [nullifier, context_tag]
   };
 
-  // Metadata
-  country:        string;       // "CO"|"MX"|"AR"|...
-  issued_at:      number;       // unix timestamp
-  expires:        number;       // issued_at + 86400 (24h)
-
-  // Signature
-  sig:            string;       // Ed25519(payload, privateKey) — hex
+  // Meta
+  country:   string;            // "CO" | "MX" | ...
+  issued_at: number;            // unix timestamp
+  expires:   number;            // +86400 (24h)
+  sig:       string;            // Ed25519(payload, privateKey)
 }
 ```
 
-**Token lifecycle:**
-
-```
-Issue ──▶ [valid 24h] ──▶ renew (no re-verify needed)
-                    └──▶ expire ──▶ re-verify required
-```
-
-**Token size:** ~700 bytes (uncompressed JSON)
+**Tamaño:** ~700 bytes sin comprimir  
+**Ciclo:** `Issue → [válido 24h] → renew` (no requiere re-verificar)
 
 ---
 
-## 6. Bot Reputation Layer
+## Bot Reputation Layer
 
 ### Attestation format
 
 ```typescript
 interface BotAttestation {
-  issuer_did:  string;   // DID of issuing service
-  target_did:  string;   // DID of bot being rated
-  value:       1 | -1;   // reward or punishment
-  context:     string;   // "spam-detected"|"normal-usage"|"payment-completed"
+  issuer_did:  string;   // DID del servicio que emite (score >= 60)
+  target_did:  string;   // DID del bot evaluado
+  value:       1 | -1;
+  context:     string;   // "spam-detected" | "normal-usage" | etc.
   timestamp:   number;   // unix seconds
-  sig:         string;   // Ed25519(payload, service.privateKey)
+  sig:         string;   // Ed25519(payload, issuer_privateKey)
 }
 ```
 
-### Reputation computation
+### Guards en el nodo validador
 
 ```
-computeReputation(attestations[], base=10):
-  1. Filter: only attestations where verifyAttestation(att) === true
-  2. Filter: deduplicate by (issuer_did, timestamp, context) — anti-replay
-  3. score = base + sum(valid_att.value)
-  4. clamp(score, 0, 20)
-  5. return { score, attestations: valid_count, last_updated: now }
-```
-
-### Issuance security
-
-```
-POST /reputation/attest
-
-Guards (all must pass):
-  ✓ service_spt present in request body
+POST /reputation/attest — solo acepta si:
+  ✓ service_spt presente
   ✓ verifySoulprint(service_spt) === true
   ✓ service_spt.score >= 60
   ✓ service_spt.did === attestation.issuer_did
-  ✓ verifyAttestation(attestation) === true
-  ✓ attestation age < 3600 seconds
-  ✓ not a duplicate (issuer_did, timestamp, context) tuple
+  ✓ verifyAttestation(att) === true  (Ed25519 válido)
+  ✓ att.timestamp > now - 3600       (no más de 1h de antigüedad)
+  ✓ no duplicado (issuer_did, timestamp, context)
 ```
 
-### How reputation builds over time
+### Construcción de reputación en el tiempo
 
 ```
-Day 0   Bot created                                    score = 10 (neutral)
-Day 1   mcp-colombia: 3 completions, no spam     ──▶  score = 11
-Day 3   service-B: payment completed             ──▶  score = 12
-Day 5   Bot spams service-C (>5 req/60s)         ──▶  score = 11
-Day 7   mcp-colombia: another normal usage       ──▶  score = 12
-Day 30  Consistent good behavior, 5+ services    ──▶  score = 17
-                                         Identity (80) + rep (17) = 97
-                                         ──▶ PREMIUM ACCESS UNLOCKED
-```
+Día 0   Bot creado                                    score = 10
+Día 1   mcp-colombia: 3 completions sin spam  ──▶    score = 11
+Día 3   servicio-B: pago completado           ──▶    score = 12
+Día 5   spam detectado en servicio-C          ──▶    score = 11
+Día 30  uso consistente en 5+ servicios       ──▶    score = 17
 
----
-
-## 7. Validator Network
-
-### Node architecture
-
-```
-soulprint-network (HTTP node)
-│
-├── GET  /health                    — liveness probe
-├── POST /verify                    — verify SPT token
-│     body: { token }
-│     returns: { ok, ctx: { did, score, level, country } }
-│
-├── GET  /reputation/:did           — query reputation
-│     returns: { did, score, attestations, last_updated }
-│
-├── POST /reputation/attest         — submit attestation
-│     body: { attestation, service_spt }
-│     guards: score>=60, sig valid, age<1h, no dup
-│     side-effect: gossip to all peers
-│
-├── POST /peers/register            — join network
-│     body: { url }
-│     stores peer, returns known peers list
-│
-└── GET  /peers                     — list known peers
-```
-
-### Persistence
-
-```
-~/.soulprint/node/
-├── reputation.json    — Map<did, ReputeEntry>
-│     ReputeEntry = { score, attestations[], last_updated }
-├── peers.json         — string[] (known peer URLs)
-└── nullifiers.json    — Map<nullifier, did> (Sybil registry)
-```
-
-### Rate limiting
-
-```
-POST /reputation/attest — 10 requests / minute / IP
-POST /verify            — 30 requests / minute / IP
-GET  /reputation/*      — 60 requests / minute / IP
+Identity (80) + Reputation (17) = 97  →  PREMIUM desbloqueado
 ```
 
 ---
 
-## 8. P2P Gossip Protocol
+## P2P Gossip Protocol
 
 ```
-Node A receives valid attestation
+Nodo A recibe attestation válida
     │
-    ▼
-Node A stores attestation locally
+    ├─▶ Almacena localmente en reputation.json
     │
-    ▼
-Node A fetches peers[] from peers.json
+    ├─▶ Obtiene peers[] de peers.json
     │
-    ▼
-For each peer ≠ origin:
-    │
-    ├──▶ POST peer/reputation/attest
-    │         headers: { "X-Gossip": "1" }
-    │         body: { attestation }   // no service_spt needed for gossip
-    │         timeout: 3000ms
-    │         catch: ignore (fire-and-forget)
-    │
-    └──▶ (repeat for all peers in parallel)
+    └─▶ Para cada peer ≠ origin (en paralelo):
+          POST {peer}/reputation/attest
+          headers: { "X-Gossip": "1" }
+          body: { attestation }
+          timeout: 3000ms
+          catch: ignorar (fire-and-forget)
 
-Anti-loop: if X-Gossip: "1" header present, node stores but does NOT re-gossip
-Anti-replay: duplicate (issuer_did, timestamp, context) tuples ignored
+Anti-loop:   si X-Gossip: "1" presente → almacenar, NO re-gossipear
+Anti-replay: duplicados (issuer_did, timestamp, context) ignorados
+Convergencia: todos los nodos sincronizan en segundos (red pequeña)
+
+Roadmap Fase 5: reemplazar HTTP gossip con libp2p DHT (Kademlia)
 ```
-
-**Eventual consistency:** all nodes converge within seconds for small networks.
-
-**Phase 5 roadmap:** replace HTTP gossip with libp2p DHT (Kademlia) for proper decentralization.
 
 ---
 
-## 9. Multi-Country Registry
+## Multi-Country Registry
 
 ```
 packages/verify-local/src/document/
-├── verifier.interface.ts     — CountryVerifier interface
-├── registry.ts               — getVerifier(), listCountries(), detectVerifier()
+├── verifier.interface.ts     CountryVerifier interface
+├── registry.ts               getVerifier(code) · listCountries() · detectVerifier(text)
 └── countries/
-    ├── CO.ts   ── Full: OCR + MRZ + face match + ICAO check digits
-    ├── MX.ts   ── Partial: INE card number + CURP format validation
-    ├── AR.ts   ── Partial: DNI 8-digit format
-    ├── VE.ts   ── Partial: Cédula V/E prefix + numeric validation
-    ├── PE.ts   ── Partial: DNI 8-digit format
-    ├── BR.ts   ── Partial: CPF mod-11 double check digit
-    └── CL.ts   ── Partial: RUN mod-11 check digit (special K handling)
+    ├── CO.ts  ── Completo: OCR + MRZ + face match + ICAO check digits
+    ├── MX.ts  ── Parcial: número INE + validación CURP
+    ├── AR.ts  ── Parcial: DNI 8 dígitos
+    ├── VE.ts  ── Parcial: Cédula V/E + prefijo
+    ├── PE.ts  ── Parcial: DNI 8 dígitos
+    ├── BR.ts  ── Parcial: CPF mod-11 doble dígito verificador
+    └── CL.ts  ── Parcial: RUN mod-11 (manejo especial de K)
 ```
 
-### CountryVerifier interface
-
-```typescript
-interface CountryVerifier {
-  countryCode:   string;               // ISO 3166-1 alpha-2
-  countryName:   string;
-  documentTypes: string[];             // ["cedula","passport",...]
-
-  parse(ocrText: string): ParsedDocument | null;
-  validate(docNumber: string): boolean;
-  parseMRZ?(mrz: string): ParsedMRZ | null;       // optional
-  quickValidate?(docNumber: string): boolean;      // optional, faster
-}
-```
-
-### Adding a country (one PR)
-
-```
-1. Create packages/verify-local/src/document/countries/XX.ts
-2. Add one import line in registry.ts
-3. That's it — no other changes needed
-```
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for full guide with check digit examples.
+**Agregar un país = 1 PR:** crear `XX.ts` + 1 línea en `registry.ts`. Ver [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
-## 10. SDK Layer
+## Security Threat Matrix
 
-### soulprint-mcp — MCP middleware
-
-```typescript
-// Usage
-server.use(soulprint({ minScore: 60 }));
-
-// Internally:
-// 1. Extract token from capabilities.identity.soulprint OR X-Soulprint header
-// 2. Call verifySoulprint(token, minScore)
-// 3. If ok: attach ctx to request context as _soulprint
-// 4. If fail: return MCP error { isError: true, content: [{type:"text", text:"..."}] }
-
-// ctx fields:
-{
-  did:      string,   // "did:key:z6Mk..."
-  score:    number,   // 0-100
-  level:    string,   // "KYCFull" etc.
-  country:  string,   // "CO"
-  identity: number,   // 0-80
-  botRep:   number,   // 0-20
-  nullifier: string,
-}
-```
-
-### soulprint-express — REST middleware
-
-```typescript
-// Usage
-app.use(soulprint({ minScore: 40 }));
-
-// req.soulprint fields (same as ctx above)
-// On failure: res.status(401).json({ error: "...", required_score: 40 })
-```
-
-### soulprint-core — primitives
-
-```typescript
-// Key functions
-generateKeypair()                           → { did, publicKey, privateKey }
-createToken(kp, nullifier, creds, opts)     → base64url SPT string
-decodeToken(token)                          → SoulprintToken | null
-verifySig(token)                            → boolean
-createAttestation(kp, targetDid, val, ctx)  → BotAttestation
-verifyAttestation(att)                      → boolean
-computeReputation(atts[], base)             → BotReputation
-calculateTotalScore(credentials, botRep)    → number (0-100)
-defaultReputation()                         → { score:10, attestations:0, ... }
-```
-
----
-
-## 11. Security Model
-
-### Threat matrix
-
-| Threat | Attack vector | Defense |
+| Amenaza | Vector | Defensa |
 |---|---|---|
-| **Fake identity** | Submit forged document image | Face match required + ICAO check digits |
-| **Register twice** | Two accounts, same person | Nullifier uniqueness: Poseidon(biometrics) = same nullifier |
-| **Score inflation** | Modify token payload | Ed25519 signature verification — sig bound to full payload |
-| **DID substitution** | Replace DID in token with attacker's DID | Sig bound to DID — mismatch = invalid |
-| **Attestation forgery** | Create +1 attestation for own DID | Sig must come from registered service DID |
-| **Low-rep service attesting** | Newly created service spams +1 | Node requires service_spt.score ≥ 60 |
-| **Attestation flood** | 1000 +1 attestations from one service | score clamped to 20; rate limit 10/min/IP |
-| **Replay attack** | Submit same attestation twice | Anti-replay: (issuer, timestamp, context) dedup |
-| **Stale attestation** | Submit old attestation after behavior change | Max age: 1 hour |
-| **Token replay** | Use someone else's valid token | Token expires 24h; context_tag per service |
-| **Sybil via nullifier** | Multiple DIDs, same nullifier | Node registry: nullifier → exactly one DID |
-| **Key theft** | Steal ~/.soulprint/keypair.json | Private key never transmitted; mode 0600 |
-
-### What Soulprint does NOT protect against
-
-- A bad actor who obtains a legitimate human's ID and selfie (forged documents)
-- Collusion between multiple verified humans to share accounts
-- Validator node compromise (mitigated by P2P — no single point of failure)
+| **Identidad falsa** | Documento forjado | Face match + ICAO check digits |
+| **Registro doble** | Misma persona, dos DIDs | Nullifier único por biometría |
+| **Score inflation** | Modificar payload del token | Firma Ed25519 cubre todo el payload |
+| **DID substitution** | Reemplazar DID en token ajeno | Firma ligada al DID — mismatch = inválido |
+| **Attestation forgery** | Crear +1 falso para DID propio | Firma del servicio emisor requerida |
+| **Servicio de baja rep** | Servicio nuevo spamea +1 | Nodo exige service_spt.score ≥ 60 |
+| **Attestation flood** | 1,000 +1 de un servicio | Score clamped en 20; rate limit 10/min/IP |
+| **Replay attack** | Reusar attestation antigua | Dedup (issuer, timestamp, context) + max 1h |
+| **Token replay** | Usar token de otro usuario | Expira en 24h + context_tag por servicio |
+| **Sybil via nullifier** | Múltiples DIDs, mismo nullifier | Nodo: nullifier → exactamente un DID |
+| **Robo de clave** | Leer `~/.soulprint/keypair.json` | Clave privada nunca se transmite; mode 0600 |
 
 ---
 
-## 12. Data Flow — Full Journey
+## Data Flow — Full Journey
 
 ```
-Principal (human)                    Bot (AI agent)             Service
-      │                                   │                         │
-      │ 1. npx soulprint verify-me        │                         │
-      │    --selfie me.jpg                │                         │
-      │    --document cedula.jpg          │                         │
-      │                                   │                         │
-      │ [LOCAL: OCR + face + ZK proof]    │                         │
-      │ → token.spt (~700 bytes)          │                         │
-      │                                   │                         │
-      │ 2. export SOULPRINT_TOKEN=...     │                         │
-      │                                   │                         │
-      │ 3. Launch bot with token ─────────▶                         │
-      │                                   │                         │
-      │                                   │ 4. Call tool            │
-      │                                   │  capabilities:{         │
-      │                                   │    identity:{           │
-      │                                   │     soulprint: <token>  │
-      │                                   │    }                    │
-      │                                   │  }                      │──▶ extractToken()
-      │                                   │                         │    verifySoulprint()
-      │                                   │                         │    → { ok, ctx }
-      │                                   │                         │
-      │                                   │                         │ 5. trackRequest(did, tool)
-      │                                   │                         │    → { allowed: true }
-      │                                   │                         │
-      │                                   │◀── tool result ─────────│
-      │                                   │                         │
-      │                                   │                         │ 6. trackCompletion(did, tool)
-      │                                   │                         │    if (3+ tools, no spam):
-      │                                   │                         │      issueAttestation(did, +1)
-      │                                   │                         │      POST /reputation/attest
-      │                                   │                         │      → gossip to all nodes
-      │                                   │                         │
-      │                                   │                         │ [score: 10 → 11]
-      │                                   │                         │
-      │ 7. npx soulprint renew            │                         │
-      │    → new token with score=91      │                         │
-      │      (80 identity + 11 rep)       │                         │
+Principal (humano)                 Bot (IA)                  Servicio
+      │                               │                          │
+      │ 1. npx soulprint verify-me    │                          │
+      │    (OCR + face + ZK proof)    │                          │
+      │    → token.spt (~700 bytes)   │                          │
+      │                               │                          │
+      │ 2. SOULPRINT_TOKEN=... ───────▶                          │
+      │                               │                          │
+      │                               │ 3. tool call             │
+      │                               │  capabilities:{          │
+      │                               │   soulprint: <token>     │
+      │                               │  }                       │──▶ extractToken()
+      │                               │                          │    verifySig()
+      │                               │                          │    check expiry
+      │                               │                          │    check minScore
+      │                               │                          │
+      │                               │                          │ 4. trackRequest(did, tool)
+      │                               │                          │    → spam check
+      │                               │                          │
+      │                               │◀── resultado ────────────│
+      │                               │                          │
+      │                               │                          │ 5. trackCompletion(did, tool)
+      │                               │                          │    if 3+ tools, no spam:
+      │                               │                          │      issueAttestation(did, +1)
+      │                               │                          │      POST /reputation/attest
+      │                               │                          │         └─▶ gossip a peers
+      │                               │                          │
+      │ 6. npx soulprint renew        │                          │
+      │    → nuevo token score=91     │                          │
+      │      (80 identity + 11 rep)   │                          │
 ```
 
 ---
 
-## 13. Package Dependency Graph
+## Package Dependency Graph
 
-```
-soulprint (CLI)
-    ├── soulprint-verify    (OCR + face match)
-    │       └── soulprint-core
-    ├── soulprint-zkp       (Circom + snarkjs)
-    │       └── soulprint-core
-    └── soulprint-network   (validator node)
-            └── soulprint-core
+```mermaid
+graph TD
+  CLI["soulprint (CLI)"]
+  CORE["soulprint-core"]
+  VERIFY["soulprint-verify"]
+  ZKP["soulprint-zkp"]
+  NET["soulprint-network"]
+  MCP["soulprint-mcp"]
+  EXP["soulprint-express"]
 
-soulprint-mcp
-    └── soulprint-core
+  CLI --> VERIFY
+  CLI --> ZKP
+  CLI --> CORE
+  CLI --> NET
 
-soulprint-express
-    └── soulprint-core
+  VERIFY --> CORE
+  ZKP --> CORE
+  NET --> CORE
+  MCP --> CORE
+  EXP --> CORE
 
-soulprint-core              (no Soulprint dependencies)
-    ├── @noble/ed25519
-    ├── bs58
-    └── poseidon-lite (Poseidon hash)
+  CORE --> ED["@noble/ed25519"]
+  CORE --> BS["bs58"]
+  CORE --> POS["poseidon-lite"]
+
+  style CORE fill:#7c6cf5,color:#fff
+  style CLI  fill:#a78bfa,color:#fff
+  style MCP  fill:#c4b5fd,color:#333
+  style EXP  fill:#c4b5fd,color:#333
 ```
 
 ---
@@ -591,63 +521,35 @@ soulprint-core              (no Soulprint dependencies)
 ```
 soulprint/
 ├── packages/
-│   ├── cli/                    soulprint — CLI
-│   │   └── src/
-│   │       ├── commands/       verify-me, show, renew, node, install-deps
-│   │       └── index.ts
-│   ├── core/                   soulprint-core
-│   │   └── src/
-│   │       ├── did.ts          DID generation (Ed25519)
-│   │       ├── token.ts        SPT create/decode/verify
-│   │       ├── attestation.ts  create/verify BotAttestations
-│   │       ├── reputation.ts   computeReputation, defaultReputation
-│   │       ├── score.ts        calculateTotalScore, credential weights
-│   │       └── index.ts
-│   ├── verify-local/           soulprint-verify
-│   │   └── src/
-│   │       ├── face/           face_match.py (InsightFace on-demand)
-│   │       ├── document/
-│   │       │   ├── verifier.interface.ts
-│   │       │   ├── registry.ts
-│   │       │   ├── cedula-validator.ts    (CO — full, ICAO check digits)
-│   │       │   └── countries/             CO, MX, AR, VE, PE, BR, CL
-│   │       └── index.ts
-│   ├── zkp/                    soulprint-zkp
-│   │   ├── circuits/
-│   │   │   └── soulprint_identity.circom  (844 constraints)
-│   │   ├── keys/
-│   │   │   ├── soulprint_identity_final.zkey
-│   │   │   └── verification_key.json
-│   │   └── src/
-│   │       ├── prove.ts        generateProof()
-│   │       └── verify.ts       verifyProof()
-│   ├── network/                soulprint-network
-│   │   └── src/
-│   │       ├── node.ts         HTTP server (Express)
-│   │       ├── reputation.ts   store/load/query
-│   │       ├── gossip.ts       P2P fire-and-forget
-│   │       └── sybil.ts        nullifier registry
-│   ├── mcp/                    soulprint-mcp
-│   │   └── src/
-│   │       └── middleware.ts   soulprint() MCP plugin
-│   └── express/                soulprint-express
-│       └── src/
-│           └── middleware.ts   soulprint() Express plugin
+│   ├── cli/src/commands/        verify-me · show · renew · node · install-deps
+│   ├── core/src/
+│   │   ├── did.ts               DID generation (Ed25519)
+│   │   ├── token.ts             SPT create / decode / verify
+│   │   ├── attestation.ts       BotAttestation create / verify
+│   │   ├── reputation.ts        computeReputation · defaultReputation
+│   │   └── score.ts             calculateTotalScore · CREDENTIAL_WEIGHTS
+│   ├── verify-local/src/
+│   │   ├── face/                face_match.py (InsightFace on-demand)
+│   │   └── document/countries/  CO MX AR VE PE BR CL
+│   ├── zkp/
+│   │   ├── circuits/            soulprint_identity.circom (844 constraints)
+│   │   └── keys/                *.zkey · verification_key.json
+│   ├── network/src/
+│   │   ├── node.ts              HTTP server (Express)
+│   │   ├── gossip.ts            P2P fire-and-forget
+│   │   └── sybil.ts             nullifier registry
+│   ├── mcp/src/middleware.ts    soulprint() MCP plugin
+│   └── express/src/middleware.ts soulprint() Express plugin
 ├── tests/
-│   ├── suite.js                104 unit + integration tests
-│   ├── pentest-node.js         15 HTTP pen tests
-│   └── zk-tests.js             16 ZK proof tests
-├── specs/
-│   └── SIP-v0.1.md             Formal protocol specification
-├── website/
-│   └── index.html              Landing page (GitHub Pages)
-├── ARCHITECTURE.md             ← this file
-├── CONTRIBUTING.md             Adding new countries
+│   ├── suite.js                 104 unit + integration
+│   ├── pentest-node.js          15 HTTP pen tests
+│   └── zk-tests.js              16 ZK proof tests
+├── specs/SIP-v0.1.md            Formal protocol spec
+├── website/index.html           Landing page (GitHub Pages)
+├── ARCHITECTURE.md              ← este archivo
 └── README.md
 ```
 
 ---
 
-*Last updated: v0.1.3 — February 2026*  
-*Protocol spec: [SIP-v0.1.md](specs/SIP-v0.1.md)*  
-*GitHub: https://github.com/manuelariasfz/soulprint*
+*v0.1.3 — Febrero 2026 · https://github.com/manuelariasfz/soulprint*
