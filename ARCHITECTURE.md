@@ -1,6 +1,9 @@
-# Soulprint — Architecture (v0.1.3)
+# Soulprint — Architecture (v0.2.0)
 
-> Diagramas C4 + referencia técnica del protocolo.  
+> Cada diagrama C4 tiene **dos formatos**:
+> - 🖼️ **Mermaid** — se renderiza visualmente en GitHub (para humanos)
+> - 📝 **ASCII** — texto plano para LLMs y herramientas que procesan markdown
+>
 > Spec formal: [specs/SIP-v0.1.md](specs/SIP-v0.1.md)
 
 ---
@@ -10,16 +13,17 @@
 1. [C4 — Level 1: System Context](#c4--level-1-system-context)
 2. [C4 — Level 2: Containers](#c4--level-2-containers)
 3. [C4 — Level 3: Components — soulprint-core](#c4--level-3-components--soulprint-core)
-4. [C4 — Level 3: Components — soulprint-network](#c4--level-3-components--soulprint-network)
-5. [Trust Score Model](#trust-score-model)
-6. [ZK Verification Pipeline](#zk-verification-pipeline)
-7. [Token Format — SPT](#token-format--spt)
-8. [Bot Reputation Layer](#bot-reputation-layer)
-9. [P2P Gossip Protocol](#p2p-gossip-protocol)
-10. [Multi-Country Registry](#multi-country-registry)
-11. [Security Threat Matrix](#security-threat-matrix)
-12. [Data Flow — Full Journey](#data-flow--full-journey)
-13. [Package Dependency Graph](#package-dependency-graph)
+4. [C4 — Level 3: Components — soulprint-network (HTTP)](#c4--level-3-components--soulprint-network-http)
+5. [C4 — Level 3: Components — soulprint-network (P2P)](#c4--level-3-components--soulprint-network-p2p)
+6. [Trust Score Model](#trust-score-model)
+7. [ZK Verification Pipeline](#zk-verification-pipeline)
+8. [Token Format — SPT](#token-format--spt)
+9. [Bot Reputation Layer](#bot-reputation-layer)
+10. [P2P Gossip Protocol](#p2p-gossip-protocol)
+11. [Multi-Country Registry](#multi-country-registry)
+12. [Security Threat Matrix](#security-threat-matrix)
+13. [Data Flow — Full Journey](#data-flow--full-journey)
+14. [Package Dependency Graph](#package-dependency-graph)
 
 ---
 
@@ -55,6 +59,36 @@ C4Context
   Rel(devOps, soulprint, "Protege API con middleware", "npm i soulprint-mcp")
 
   UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="1")
+```
+
+> **📝 ASCII — para LLMs**
+
+```
+Personas:
+  [Human Principal]    — verifica identidad (npx soulprint verify-me)
+  [Service Operator]   — protege API con soulprint-mcp / soulprint-express
+  [Node Operator]      — levanta nodo validador (npx soulprint node)
+
+Sistema central:
+  ┌──────────────────────────────────────────────────────┐
+  │                   SOULPRINT PROTOCOL                 │
+  │  ZK identity · Bot reputation · P2P validators       │
+  └──────────────────────────────────────────────────────┘
+
+Sistemas externos:
+  [Validator Network]  — mesh libp2p: KadDHT + GossipSub + mDNS
+  [Verified Services]  — MCP servers / REST APIs (e.g. mcp-colombia-hub)
+  [AI Bot / Agent]     — Claude, GPT, AutoGPT — opera por el humano
+  [Local ML Models]    — Tesseract OCR + InsightFace (on-device, killed after)
+
+Relaciones:
+  Human Principal   ──verify-me──▶  Soulprint  ──OCR+face──▶  Local ML
+  Soulprint         ──ZK proof──▶   Validator Network
+  AI Bot            ──SPT token──▶  Verified Services
+  Verified Services ──verify──▶     Soulprint
+  Verified Services ──attest──▶     Validator Network
+  Validator Network ──GossipSub──▶  Validator Network  (P2P mesh)
+  Node Operator     ──deploy──▶     Validator Network
 ```
 
 ---
@@ -126,9 +160,36 @@ C4Container
   UpdateLayoutConfig($c4ShapeInRow="4", $c4BoundaryInRow="1")
 ```
 
----
+> **📝 ASCII — para LLMs**
 
-## C4 — Level 3: Components — soulprint-core
+```
+                        ┌────────────────────────────────────────────────────┐
+                        │              soulprint (CLI)                       │
+                        │   verify-me · show · renew · node · install-deps   │
+                        └──┬──────────┬──────────┬───────────┬───────────────┘
+                           │          │          │           │
+                    ┌──────▼───┐ ┌────▼────┐ ┌──▼──────┐ ┌──▼─────────────────┐
+                    │soulprint │ │soulprint│ │soulprint│ │soulprint-network   │
+                    │ -verify  │ │  -zkp   │ │  -core  │ │                    │
+                    │ TS+Python│ │Circom + │ │DID·SPT  │ │ HTTP (port 4888)   │
+                    │OCR+InsF  │ │snarkjs  │ │Ed25519  │ │ P2P  (port 6888)   │
+                    │7 países  │ │844 cnst │ │Poseidon │ │ KadDHT+GossipSub   │
+                    └──────────┘ └─────────┘ └────┬────┘ └────────────────────┘
+                                                  │
+                    ┌─────────────────────────────┼──────────────────────────────┐
+                    │                             │                              │
+             ┌──────▼──────┐             ┌────────▼──────┐              ┌───────▼──────┐
+             │soulprint-mcp│             │ soulprint-    │              │ Filesystem   │
+             │ MCP server  │             │  express      │              │ ~/.soulprint/│
+             │ middleware  │             │  Express/     │              │ keypair.json │
+             │ 3 lines     │             │  Fastify mw   │              │ token.spt    │
+             └─────────────┘             └───────────────┘              │ reputation   │
+                                                                         │ nullifiers   │
+                                                                         └──────────────┘
+Nota: soulprint-network tiene dos sub-procesos en el mismo proceso:
+  ├── HTTP validator (port 4888): REST API, ZK verify, nullifier registry, rate limit
+  └── P2P libp2p    (port 6888): KadDHT, GossipSub, mDNS, Bootstrap, Noise+Yamux+TCP
+```
 
 > Los primitivos que usan todos los demás paquetes.
 
@@ -184,9 +245,45 @@ C4Component
   UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="1")
 ```
 
----
+> **📝 ASCII — para LLMs**
 
-## C4 — Level 3: Components — soulprint-network (HTTP)
+```
+                        ┌──────────────────────────────────────┐
+                        │          soulprint-core              │
+                        │  (base de todos los demás paquetes)  │
+                        └──────────────────────────────────────┘
+
+  ┌──────────────────┐   ┌──────────────────┐   ┌─────────────────────────┐
+  │   DID Manager    │   │  Token Engine    │   │  Attestation Manager    │
+  │    (did.ts)      │   │   (token.ts)     │   │   (attestation.ts)      │
+  │                  │   │                  │   │                         │
+  │generateKeypair() │   │createToken()     │   │createAttestation()      │
+  │loadKeypair()     │──▶│decodeToken()     │   │verifyAttestation()      │
+  │saveKeypair()     │   │verifySig()       │   │Ed25519 sign + verify    │
+  │did:key:z6Mk...   │   │expiry: +24h      │   │age check (<1h)          │
+  └────────┬─────────┘   └────────┬─────────┘   └──────────┬──────────────┘
+           │                      │                         │
+           ▼                      ▼                         ▼
+  ┌──────────────────────────────────────────────────────────────────────┐
+  │                     Crypto Primitives (crypto.ts)                   │
+  │   @noble/ed25519 · poseidon-lite · bs58 · randomBytes              │
+  └──────────────────────────────────────────────────────────────────────┘
+           │
+  ┌────────▼─────────┐   ┌──────────────────────────────────────────────┐
+  │ Reputation Engine│   │         Score Calculator (score.ts)          │
+  │ (reputation.ts)  │   │                                              │
+  │                  │   │ calculateTotalScore(creds, botRep)           │
+  │computeReputation │   │ CREDENTIAL_WEIGHTS:                         │
+  │ (atts[], base=10)│──▶│   Email:8 · Phone:12 · GitHub:16            │
+  │ clamp(0, 20)     │   │   Document:20 · FaceMatch:16 · Biometric:8  │
+  │defaultReputation │   │ total = identity(0-80) + botRep(0-20)      │
+  └──────────────────┘   └──────────────────────────────────────────────┘
+
+Consumidores:
+  CLI → DID Manager + Token Engine
+  soulprint-network → Reputation Engine + Attestation Manager
+  soulprint-mcp/express → Token Engine + Score Calculator
+```
 
 > El nodo validador HTTP: cómo guarda y propaga la reputación.
 
@@ -234,9 +331,40 @@ C4Component
   UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="1")
 ```
 
----
+> **📝 ASCII — para LLMs**
 
-## C4 — Level 3: Components — soulprint-network (P2P)
+```
+                ┌─────────────────────────────────────────────────────┐
+                │      soulprint-network — HTTP Validator (port 4888) │
+                │      validator.ts — Node.js built-in http module     │
+                └─────────────────────────────────────────────────────┘
+                          │
+          ┌───────────────┼───────────────────────────────┐
+          │               │                               │
+          ▼               ▼                               ▼
+  ┌───────────────┐ ┌─────────────────┐         ┌──────────────────────┐
+  │  Rate Limiter │ │  REST API        │         │     P2P Bridge       │
+  │               │ │                 │         │   (setP2PNode)        │
+  │ /attest 10/m  │ │ GET  /info      │         │                      │
+  │ /verify 30/m  │ │ POST /verify    │         │ gossipAttestation()  │
+  │ Map<IP,count> │ │ POST /attest    │─────────▶ Canal 1: GossipSub   │
+  └───────────────┘ │ GET  /rep/:did  │         │ Canal 2: HTTP legacy │
+                    │ POST /peers/reg │         │                      │
+                    │ GET  /peers     │         │ onAttestationReceived│
+                    └────────┬────────┘         │ → applyAttestation() │
+                             │                  └──────────────────────┘
+              ┌──────────────┼─────────────┐
+              ▼              ▼             ▼
+   ┌───────────────┐ ┌────────────┐ ┌─────────────┐
+   │ Reputation    │ │   Sybil    │ │Peer Manager │
+   │ Store         │ │ Registry   │ │  (legacy)   │
+   │               │ │            │ │             │
+   │ applyAttest() │ │1 nullifier │ │ peers.json  │
+   │ anti-replay   │ │= 1 DID     │ │ HTTP nodos  │
+   │ reputation.   │ │nullifiers. │ │ sin libp2p  │
+   │  json (disk)  │ │  json      │ └─────────────┘
+   └───────────────┘ └────────────┘
+```
 
 > La capa libp2p: cómo los nodos se descubren y propagan attestations.
 
@@ -281,9 +409,52 @@ C4Component
   UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="1")
 ```
 
----
+> **📝 ASCII — para LLMs**
 
-## Trust Score Model
+```
+                ┌─────────────────────────────────────────────────────┐
+                │   soulprint-network — P2P Layer (port 6888)         │
+                │   p2p.ts — libp2p v2.10 (ESM, Node.js ≥18)         │
+                └─────────────────────────────────────────────────────┘
+                          │ createSoulprintP2PNode({ port, bootstraps, localOnly })
+                          ▼
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │                     Transport Stack                                  │
+  │   TCP (@libp2p/tcp) → Noise encryption (@chainsafe/libp2p-noise)    │
+  │   → Yamux multiplexing (@chainsafe/libp2p-yamux)                    │
+  │   → Ping health checks (@libp2p/ping)   [requerido por KadDHT]     │
+  └──────────────────────────────┬──────────────────────────────────────┘
+                                 │
+           ┌─────────────────────┼───────────────────────┐
+           │                     │                       │
+           ▼                     ▼                       ▼
+  ┌─────────────────┐  ┌─────────────────────┐  ┌──────────────────────┐
+  │  Kademlia DHT   │  │     GossipSub        │  │   Peer Discovery     │
+  │ @libp2p/kad-dht │  │ @chainsafe/libp2p    │  │                      │
+  │                 │  │     -gossipsub       │  │ mDNS: LAN broadcast  │
+  │ clientMode:false│  │                      │  │  (zero config)       │
+  │ FIND_NODE XOR   │  │ topic:               │  │ Bootstrap: multiaddrs│
+  │ routing table   │  │ soulprint:attest:v1  │  │  (via SOULPRINT_     │
+  │ peer routing    │  │ emitSelf: false      │  │   BOOTSTRAP env var) │
+  │ internet-wide   │  │ publish → recipients │  │ Identify: protcls    │
+  └─────────────────┘  └──────────┬──────────┘  └──────────────────────┘
+                                  │
+                    ┌─────────────▼────────────────┐
+                    │       PubSub API helpers      │
+                    │  publishAttestationP2P(node,  │
+                    │    att) → recipients: number  │
+                    │  onAttestationReceived(node,  │
+                    │    handler(att, fromPeer))     │
+                    │  getP2PStats(node) →          │
+                    │    peerId, peers, multiaddrs  │
+                    │  stopP2PNode(node)            │
+                    └───────────────────────────────┘
+                                  │
+                   ───────────────▼──────────────────
+                   → Peer ID: 12D3KooW... (Ed25519)
+                   → Multiaddr: /ip4/x.x.x.x/tcp/6888/p2p/12D3KooW...
+                   → GossipSub mesh ←→ otros nodos Soulprint
+```
 
 ```
 Total Score (0–100) = Identity Score (0–80) + Bot Reputation (0–20)
@@ -613,6 +784,36 @@ graph TD
   style CLI  fill:#a78bfa,color:#fff
   style MCP  fill:#c4b5fd,color:#333
   style EXP  fill:#c4b5fd,color:#333
+```
+
+> **📝 ASCII — para LLMs**
+
+```
+soulprint (CLI)
+    ├── soulprint-verify    (OCR + face match)
+    │       └── soulprint-core
+    ├── soulprint-zkp       (Circom + snarkjs)
+    │       └── soulprint-core
+    └── soulprint-network   (HTTP validator + libp2p P2P)
+            └── soulprint-core
+
+soulprint-mcp               (MCP middleware, 3 líneas)
+    └── soulprint-core
+
+soulprint-express           (Express/Fastify middleware)
+    └── soulprint-core
+
+soulprint-core              (sin dependencias Soulprint)
+    ├── @noble/ed25519      — Ed25519 sign/verify
+    ├── bs58                — base58 encode/decode
+    └── poseidon-lite       — hash ZK-friendly
+
+soulprint-network (solo, libp2p deps):
+    ├── libp2p@2.10.0
+    ├── @libp2p/tcp · @chainsafe/libp2p-noise · @chainsafe/libp2p-yamux
+    ├── @libp2p/kad-dht · @chainsafe/libp2p-gossipsub
+    ├── @libp2p/mdns · @libp2p/bootstrap · @libp2p/identify · @libp2p/ping
+    └── uint8arrays
 ```
 
 ---
