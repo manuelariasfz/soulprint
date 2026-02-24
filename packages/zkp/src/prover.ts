@@ -123,7 +123,7 @@ export async function generateProof(input: ZKProofInput): Promise<ZKProof> {
 
   if (!existsSync(wasmPath) || !existsSync(zkeyPath)) {
     throw new Error(
-      "Circuito no compilado. Ejecuta: pnpm --filter @soulprint/zkp build:circuits"
+      "Circuito no compilado. Ejecuta: pnpm --filter soulprint-zkp build:circuits"
     );
   }
 

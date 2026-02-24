@@ -1,23 +1,53 @@
 {
-  "name": "@soulprint/zkp",
+  "name": "soulprint-zkp",
   "version": "0.1.0",
-  "description": "Soulprint ZK proofs — Circom circuits + snarkjs prover",
+  "description": "Soulprint ZK proofs \u2014 Circom circuit + snarkjs prover/verifier (844 constraints, Groth16)",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "circuits",
+    "keys/verification_key.json",
+    "keys/soulprint_identity_final.zkey",
+    "scripts",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc",
-    "build:circuits": "node scripts/compile-circuits.js",
-    "test": "node --test dist/**/*.test.js"
+    "build:circuits": "node scripts/compile-circuits.js"
   },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/manuelariasfz/soulprint",
+    "directory": "packages/zkp"
+  },
+  "homepage": "https://github.com/manuelariasfz/soulprint#readme",
+  "keywords": [
+    "soulprint",
+    "zero-knowledge",
+    "zk-proof",
+    "circom",
+    "snarkjs",
+    "groth16",
+    "poseidon",
+    "kyc"
+  ],
+  "license": "MIT",
   "dependencies": {
-    "@soulprint/core": "workspace:*",
+    "soulprint-core": "workspace:*",
     "circomlibjs": "^0.1.7",
     "ffjavascript": "^0.3.0",
     "snarkjs": "^0.7.4"
   },
   "devDependencies": {
-    "@types/node": "^20.0.0",
-    "circomlib": "^2.0.5",
-    "typescript": "^5.4.0"
+    "circomlib": "*",
+    "typescript": "^5.4.0",
+    "@types/node": "^20.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }

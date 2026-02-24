@@ -4,8 +4,8 @@
  * npx soulprint <command> [options]
  */
 
-import { verifyIdentity }                    from "@soulprint/verify-local";
-import { decodeToken }                       from "@soulprint/core";
+import { verifyIdentity }                    from "soulprint-verify";
+import { decodeToken }                       from "soulprint-core";
 import { readFileSync, writeFileSync,
          existsSync, mkdirSync }             from "node:fs";
 import { join }                              from "node:path";
@@ -157,11 +157,11 @@ async function cmdNode() {
   console.log("");
 
   try {
-    const { startValidatorNode } = await import("@soulprint/network");
+    const { startValidatorNode } = await import("soulprint-network");
     startValidatorNode(port);
   } catch (e: any) {
     if (e.code === "ERR_MODULE_NOT_FOUND") {
-      console.error("❌ @soulprint/network no está instalado.");
+      console.error("❌ soulprint-network no está instalado.");
       console.error("   Instala con: npm install -g soulprint");
     } else {
       throw e;
@@ -190,7 +190,7 @@ async function cmdRenew() {
 
   // Re-emitir el token con las mismas credenciales por 24h más
   // (sin re-verificar cara/documento — solo extiende el lifetime)
-  const { keypairFromPrivateKey, createToken } = await import("@soulprint/core");
+  const { keypairFromPrivateKey, createToken } = await import("soulprint-core");
   const keyFile = join(SOULPRINT_DIR, "identity.json");
 
   if (!existsSync(keyFile)) {
@@ -274,11 +274,11 @@ EJEMPLOS:
 INTEGRACIÓN (3 líneas):
 
   // MCP Server
-  import { soulprint } from "@soulprint/mcp";
+  import { soulprint } from "soulprint-mcp";
   server.use(soulprint({ minScore: 60 }));
 
   // Express / REST API
-  import { soulprint } from "@soulprint/express";
+  import { soulprint } from "soulprint-express";
   app.use(soulprint({ minScore: 40 }));
 
 MÁS INFORMACIÓN:

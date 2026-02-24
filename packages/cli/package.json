@@ -1,17 +1,49 @@
 {
-  "name": "@soulprint/cli",
+  "name": "soulprint",
   "version": "0.1.0",
-  "description": "Soulprint CLI — npx soulprint verify-me",
-  "bin": { "soulprint": "dist/index.js" },
+  "description": "Soulprint CLI \u2014 npx soulprint verify-me: verify your identity, run a validator node",
   "main": "dist/index.js",
-  "scripts": { "build": "tsc" },
+  "types": "dist/index.d.ts",
+  "bin": {
+    "soulprint": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "postbuild": "chmod +x dist/index.js"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/manuelariasfz/soulprint",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/manuelariasfz/soulprint#readme",
+  "keywords": [
+    "soulprint",
+    "cli",
+    "kyc",
+    "identity",
+    "cedula",
+    "colombia",
+    "zero-knowledge"
+  ],
+  "license": "MIT",
   "dependencies": {
-    "@soulprint/core":         "workspace:*",
-    "@soulprint/verify-local": "workspace:*",
-    "@soulprint/network":      "workspace:*"
+    "soulprint-core": "workspace:*",
+    "soulprint-verify": "workspace:*",
+    "soulprint-network": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.4.0",
     "@types/node": "^20.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }

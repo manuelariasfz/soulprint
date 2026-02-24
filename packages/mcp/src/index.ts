@@ -1,4 +1,4 @@
-import { decodeToken, SoulprintToken, TrustLevel, CredentialType } from "@soulprint/core";
+import { decodeToken, SoulprintToken, TrustLevel, CredentialType } from "soulprint-core";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -90,7 +90,7 @@ export function verifySPT(
  *
  * ```typescript
  * import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
- * import { soulprint } from "@soulprint/mcp";
+ * import { soulprint } from "soulprint-mcp";
  *
  * const server = new McpServer({ name: "my-server", version: "1.0" });
  * server.use(soulprint({ minScore: 60 }));
@@ -197,4 +197,4 @@ class MCPError extends Error {
 }
 
 // ── Re-exports ────────────────────────────────────────────────────────────────
-export { decodeToken, SoulprintToken, TrustLevel, CredentialType } from "@soulprint/core";
+export { decodeToken, SoulprintToken, TrustLevel, CredentialType } from "soulprint-core";

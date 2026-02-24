@@ -1,25 +1,52 @@
 {
-  "name": "@soulprint/express",
+  "name": "soulprint-express",
   "version": "0.1.0",
-  "description": "Soulprint Express/Fastify middleware — protect any REST API with 1 line",
+  "description": "Soulprint Express/Fastify middleware \u2014 app.use(soulprint({ minScore: 40 }))",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc"
   },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/manuelariasfz/soulprint",
+    "directory": "packages/express"
+  },
+  "homepage": "https://github.com/manuelariasfz/soulprint#readme",
+  "keywords": [
+    "soulprint",
+    "express",
+    "fastify",
+    "middleware",
+    "kyc",
+    "identity",
+    "ai-agents"
+  ],
+  "license": "MIT",
   "dependencies": {
-    "@soulprint/core": "workspace:*"
+    "soulprint-core": "workspace:*"
   },
   "peerDependencies": {
     "express": ">=4.0.0"
   },
   "peerDependenciesMeta": {
-    "express": { "optional": true }
+    "express": {
+      "optional": true
+    }
   },
   "devDependencies": {
-    "typescript":     "^5.4.0",
-    "@types/node":    "^20.0.0",
+    "typescript": "^5.4.0",
+    "@types/node": "^20.0.0",
     "@types/express": "^4.17.0"
   },
-  "keywords": ["soulprint", "express", "fastify", "middleware", "kyc", "identity", "ai-agents"]
+  "engines": {
+    "node": ">=18.0.0"
+  }
 }

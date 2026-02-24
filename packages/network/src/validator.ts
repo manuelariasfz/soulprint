@@ -3,8 +3,8 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { join }     from "node:path";
 import { homedir }  from "node:os";
 import { generateKeypair, keypairFromPrivateKey, SoulprintKeypair,
-         decodeToken, sign } from "@soulprint/core";
-import { verifyProof, deserializeProof } from "@soulprint/zkp";
+         decodeToken, sign } from "soulprint-core";
+import { verifyProof, deserializeProof } from "soulprint-zkp";
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const PORT         = parseInt(process.env.SOULPRINT_PORT ?? "4888");

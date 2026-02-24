@@ -1,21 +1,51 @@
 {
-  "name": "@soulprint/verify-local",
+  "name": "soulprint-verify",
   "version": "0.1.0",
-  "description": "Soulprint local verification — on-demand face match + document OCR",
+  "description": "Soulprint local verification \u2014 on-demand cedula OCR + InsightFace match, zero persistent memory",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "src/face/face_match.py",
+    "spa.traineddata",
+    "README.md"
+  ],
   "scripts": {
-    "build": "tsc"
+    "build": "tsc",
+    "postbuild": "mkdir -p dist/face && cp src/face/face_match.py dist/face/"
   },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/manuelariasfz/soulprint",
+    "directory": "packages/verify-local"
+  },
+  "homepage": "https://github.com/manuelariasfz/soulprint#readme",
+  "keywords": [
+    "soulprint",
+    "kyc",
+    "face-recognition",
+    "ocr",
+    "cedula",
+    "colombia",
+    "insightface",
+    "tesseract"
+  ],
+  "license": "MIT",
   "dependencies": {
-    "@soulprint/core":  "workspace:*",
-    "@soulprint/zkp":   "workspace:*",
-    "tesseract.js":     "^5.1.0",
-    "sharp":            "^0.33.3",
-    "@noble/hashes":    "^1.4.0"
+    "soulprint-core": "workspace:*",
+    "soulprint-zkp": "workspace:*",
+    "tesseract.js": "^5.1.0",
+    "sharp": "^0.33.3",
+    "@noble/hashes": "^1.4.0"
   },
   "devDependencies": {
     "typescript": "^5.4.0",
     "@types/node": "^20.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }

@@ -1,4 +1,4 @@
-import { generateKeypair, deriveNullifier, createToken, CredentialType, SoulprintKeypair, sign } from "@soulprint/core";
+import { generateKeypair, deriveNullifier, createToken, CredentialType, SoulprintKeypair, sign } from "soulprint-core";
 import { ocrCedula, quickValidateImage }     from "./document/ocr.js";
 import { matchFaceWithDocument }              from "./face/face-match.js";
 import { existsSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
@@ -14,7 +14,7 @@ export interface VerificationOptions {
   verbose?:       boolean;
   minFaceSim?:    number;
   checkLiveness?: boolean;
-  withZKP?:       boolean;   // generar ZK proof (default: true si @soulprint/zkp disponible)
+  withZKP?:       boolean;   // generar ZK proof (default: true si soulprint-zkp disponible)
 }
 
 export interface VerificationResult {
@@ -94,7 +94,7 @@ export async function verifyIdentity(opts: VerificationOptions): Promise<Verific
     return { success: false, errors, steps };
   }
 
-  // ── PASO 5: ZK Proof (opcional, si @soulprint/zkp está disponible) ─────────
+  // ── PASO 5: ZK Proof (opcional, si soulprint-zkp está disponible) ─────────
   let zkProofSerialized: string | undefined;
   const withZKP = opts.withZKP !== false; // default: true
 
@@ -102,7 +102,7 @@ export async function verifyIdentity(opts: VerificationOptions): Promise<Verific
     log("Generando ZK proof...");
     try {
       // Importar dinámicamente para no fallar si no está compilado el circuito
-      const zkp = await import("@soulprint/zkp");
+      const zkp = await import("soulprint-zkp");
 
       const cedula_num = zkp.cedulaToBigInt(docResult.cedula_number!);
       const fecha_nac  = zkp.fechaToBigInt(docResult.fecha_nacimiento ?? "19000101");
@@ -152,7 +152,7 @@ function loadOrCreateKeypair(): SoulprintKeypair {
 
   if (existsSync(KEYPAIR_FILE)) {
     const stored = JSON.parse(readFileSync(KEYPAIR_FILE, "utf8"));
-    const { keypairFromPrivateKey } = require("@soulprint/core");
+    const { keypairFromPrivateKey } = require("soulprint-core");
     return keypairFromPrivateKey(new Uint8Array(Buffer.from(stored.privateKey, "hex")));
   }
 

@@ -5,7 +5,9 @@
 Soulprint lets any AI bot prove there's a verified human behind it — without revealing who that human is. No companies, no servers, no paid APIs. Just cryptographic proof.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Phase](https://img.shields.io/badge/MVP-phases%201--3%20complete-green)]()
+[[![npm soulprint](https://img.shields.io/npm/v/soulprint?label=soulprint&color=blue)](https://npmjs.com/package/soulprint)
+[![npm soulprint-mcp](https://img.shields.io/npm/v/soulprint-mcp?label=soulprint-mcp&color=purple)](https://npmjs.com/package/soulprint-mcp)
+![Phase](https://img.shields.io/badge/MVP-phases%201--3%20complete-green)]()
 [![Built with](https://img.shields.io/badge/built%20with-Circom%20%2B%20snarkjs%20%2B%20InsightFace-purple)]()
 
 ---
@@ -99,7 +101,7 @@ npx soulprint node --port 4888
 
 ```typescript
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { soulprint } from "@soulprint/mcp";
+import { soulprint } from "soulprint-mcp";
 
 const server = new McpServer({ name: "my-server", version: "1.0" });
 server.use(soulprint({ minScore: 60 }));  // require KYC-verified humans
@@ -122,7 +124,7 @@ Or in the HTTP header: `X-Soulprint: <token>`
 
 ```typescript
 import express from "express";
-import { soulprint } from "@soulprint/express";
+import { soulprint } from "soulprint-express";
 
 const app = express();
 
@@ -144,7 +146,7 @@ app.get("/me", soulprint({ minScore: 20 }), (req, res) => {
 ### Fastify
 
 ```typescript
-import { soulprintFastify } from "@soulprint/express";
+import { soulprintFastify } from "soulprint-express";
 
 await fastify.register(soulprintFastify, { minScore: 60 });
 
@@ -180,7 +182,7 @@ GET  /nullifier/:hash   — check if nullifier is registered (anti-Sybil)
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  Layer 4 — SDKs (@soulprint/mcp, express)      ✅ Done  │
+│  Layer 4 — SDKs (soulprint-mcp, express)      ✅ Done  │
 ├─────────────────────────────────────────────────────────┤
 │  Layer 3 — Validator Nodes (HTTP + anti-Sybil)  ✅ Done │
 ├─────────────────────────────────────────────────────────┤
@@ -206,13 +208,13 @@ After verify:     ~8MB RAM   (subprocess exits → memory freed)
 
 | Package | Description | Install |
 |---|---|---|
-| [`@soulprint/core`](packages/core) | DID, SPT tokens, Poseidon nullifier | `npm i @soulprint/core` |
-| [`@soulprint/verify-local`](packages/verify-local) | OCR + face match (on-demand) | `npm i @soulprint/verify-local` |
-| [`@soulprint/zkp`](packages/zkp) | Circom circuit + snarkjs prover | `npm i @soulprint/zkp` |
-| [`@soulprint/network`](packages/network) | Validator node HTTP server | `npm i @soulprint/network` |
-| [`@soulprint/mcp`](packages/mcp) | MCP middleware (3 lines) | `npm i @soulprint/mcp` |
-| [`@soulprint/express`](packages/express) | Express/Fastify middleware | `npm i @soulprint/express` |
-| [`@soulprint/cli`](packages/cli) | `npx soulprint` CLI | `npm i -g @soulprint/cli` |
+| [`soulprint-core`](packages/core) | DID, SPT tokens, Poseidon nullifier | `npm i soulprint-core` |
+| [`soulprint-verify`](packages/verify-local) | OCR + face match (on-demand) | `npm i soulprint-verify` |
+| [`soulprint-zkp`](packages/zkp) | Circom circuit + snarkjs prover | `npm i soulprint-zkp` |
+| [`soulprint-network`](packages/network) | Validator node HTTP server | `npm i soulprint-network` |
+| [`soulprint-mcp`](packages/mcp) | MCP middleware (3 lines) | `npm i soulprint-mcp` |
+| [`soulprint-express`](packages/express) | Express/Fastify middleware | `npm i soulprint-express` |
+| [`soulprint`](packages/cli) | `npx soulprint` CLI | `npm i -g soulprint` |
 
 ---
 
@@ -327,7 +329,7 @@ node -e "require('./packages/core/dist/index.js')"
 ### Compile ZK circuit (first time only)
 
 ```bash
-pnpm --filter @soulprint/zkp build:circuits
+pnpm --filter soulprint-zkp build:circuits
 ```
 
 ### Python dependencies
@@ -358,7 +360,7 @@ pip3 install insightface opencv-python-headless onnxruntime
 ✅ Phase 1 — Local verification (cedula OCR + face match + nullifier)
 ✅ Phase 2 — ZK proofs (Circom circuit + snarkjs prover/verifier)
 ✅ Phase 3 — Validator nodes (HTTP + ZK verify + anti-Sybil registry)
-✅ Phase 4 — SDKs (@soulprint/mcp, @soulprint/express)
+✅ Phase 4 — SDKs (soulprint-mcp, soulprint-express)
 🚧 Phase 5 — P2P network (libp2p DHT, multi-node consensus)
 🚧 Phase 6 — Multi-country support (passport, DNI, CURP, RUT...)
 🔮 Phase 7 — On-chain nullifier registry (optional, EVM-compatible)

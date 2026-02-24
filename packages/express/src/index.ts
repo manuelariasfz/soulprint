@@ -1,4 +1,4 @@
-import { decodeToken, SoulprintToken, TrustLevel, CredentialType } from "@soulprint/core";
+import { decodeToken, SoulprintToken, TrustLevel, CredentialType } from "soulprint-core";
 import { verifySPT, SoulprintOptions }                              from "./verify.js";
 
 export { verifySPT, SoulprintOptions };
@@ -12,7 +12,7 @@ export { verifySPT, SoulprintOptions };
  *
  * ```typescript
  * import express from "express";
- * import { soulprint } from "@soulprint/express";
+ * import { soulprint } from "soulprint-express";
  *
  * const app = express();
  *
@@ -89,7 +89,7 @@ function extractSPT(req: any): string | undefined {
  *
  * ```typescript
  * import Fastify from "fastify";
- * import { soulprintFastify } from "@soulprint/express";
+ * import { soulprintFastify } from "soulprint-express";
  *
  * const fastify = Fastify();
  * await fastify.register(soulprintFastify, { minScore: 60 });
@@ -129,4 +129,4 @@ declare global {
   }
 }
 
-export { decodeToken, SoulprintToken, TrustLevel, CredentialType } from "@soulprint/core";
+export { decodeToken, SoulprintToken, TrustLevel, CredentialType } from "soulprint-core";

@@ -1,21 +1,44 @@
 {
-  "name": "@soulprint/core",
+  "name": "soulprint-core",
   "version": "0.1.0",
-  "description": "Soulprint core — DID generation, SPT tokens, crypto helpers",
+  "description": "Soulprint core \u2014 DID keypairs, SPT tokens, Ed25519 signatures, trust scoring",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
-    "build": "tsc",
-    "test": "node --test dist/**/*.test.js"
+    "build": "tsc"
   },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/manuelariasfz/soulprint",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/manuelariasfz/soulprint#readme",
+  "keywords": [
+    "soulprint",
+    "kyc",
+    "did",
+    "decentralized-identity",
+    "zero-knowledge",
+    "ai-agents"
+  ],
+  "license": "MIT",
   "dependencies": {
     "@noble/curves": "^1.4.0",
     "@noble/hashes": "^1.4.0",
-    "bs58": "^6.0.0",
-    "multiformats": "^13.1.0"
+    "bs58": "^6.0.0"
   },
   "devDependencies": {
-    "@types/node": "^20.0.0",
-    "typescript": "^5.4.0"
+    "typescript": "^5.4.0",
+    "@types/node": "^20.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }

@@ -31,7 +31,7 @@ cd packages/verify-local && node -e "/* see README */"
 ## ZK Circuit Changes
 
 If you modify `packages/zkp/circuits/soulprint_identity.circom`:
-1. Re-run `pnpm --filter @soulprint/zkp build:circuits`
+1. Re-run `pnpm --filter soulprint-zkp build:circuits`
 2. **Important**: the trusted setup must be redone — notify the community
 3. Ideally run a multi-party ceremony (see snarkjs docs)
 

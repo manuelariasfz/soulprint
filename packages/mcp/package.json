@@ -1,24 +1,51 @@
 {
-  "name": "@soulprint/mcp",
+  "name": "soulprint-mcp",
   "version": "0.1.0",
-  "description": "Soulprint MCP middleware — protect any MCP server with 3 lines of code",
+  "description": "Soulprint MCP middleware \u2014 protect any MCP server with 3 lines: server.use(soulprint({ minScore: 60 }))",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/manuelariasfz/soulprint",
+    "directory": "packages/mcp"
+  },
+  "homepage": "https://github.com/manuelariasfz/soulprint#readme",
+  "keywords": [
+    "soulprint",
+    "mcp",
+    "model-context-protocol",
+    "kyc",
+    "middleware",
+    "ai-agents",
+    "identity"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "soulprint-core": "workspace:*"
   },
   "peerDependencies": {
     "@modelcontextprotocol/sdk": ">=1.0.0"
   },
   "peerDependenciesMeta": {
-    "@modelcontextprotocol/sdk": { "optional": true }
-  },
-  "dependencies": {
-    "@soulprint/core": "workspace:*"
+    "@modelcontextprotocol/sdk": {
+      "optional": true
+    }
   },
   "devDependencies": {
-    "typescript":  "^5.4.0",
+    "typescript": "^5.4.0",
     "@types/node": "^20.0.0"
   },
-  "keywords": ["soulprint", "mcp", "kyc", "identity", "zero-knowledge", "ai-agents"]
+  "engines": {
+    "node": ">=18.0.0"
+  }
 }

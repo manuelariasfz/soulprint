@@ -1,4 +1,4 @@
-import { decodeToken, SoulprintToken, TrustLevel, CredentialType } from "@soulprint/core";
+import { decodeToken, SoulprintToken, TrustLevel, CredentialType } from "soulprint-core";
 
 export interface SoulprintOptions {
   minScore?:     number;
