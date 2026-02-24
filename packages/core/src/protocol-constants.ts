@@ -87,6 +87,38 @@ export const PROTOCOL = Object.freeze({
 
   /** Ventana de tiempo del rate limiter (ms). */
   RATE_LIMIT_WINDOW_MS: 60_000,
+
+  // ── Biometric thresholds (INAMOVIBLES) ─────────────────────────────────────
+  /**
+   * Similitud mínima para verificación DOCUMENTO vs SELFIE.
+   * Fotos de documentos son más antiguas/pequeñas que selfies en vivo.
+   * Validado con cédula CO real: similitud 0.365 → VERIFICADO.
+   * Una persona diferente obtiene < 0.15 con el mismo modelo.
+   *
+   * NO MODIFICAR en runtime. Cambiar requiere nuevo SIP + bump de versión.
+   */
+  FACE_SIM_DOC_SELFIE: 0.35,
+
+  /**
+   * Similitud mínima para verificación SELFIE vs SELFIE (re-verificación,
+   * liveness check, o comparación entre sesiones del mismo usuario).
+   * Umbral más estricto porque ambas fotos son recientes y de alta calidad.
+   */
+  FACE_SIM_SELFIE_SELFIE: 0.65,
+
+  /**
+   * Número de dimensiones del embedding usadas para derivar el face_key.
+   * Las primeras 32 dims capturan suficiente identidad y son más robustas
+   * ante variaciones de iluminación/ángulo.
+   */
+  FACE_KEY_DIMS: 32,
+
+  /**
+   * Decimales de precisión al redondear las dimensiones del embedding.
+   * 1 decimal absorbe el ruido natural de InsightFace (±0.01).
+   * Garantiza que la misma cara → mismo face_key aunque la foto varíe levemente.
+   */
+  FACE_KEY_PRECISION: 1,
 } as const);
 
 // Tipo derivado — útil para tipado estricto en TypeScript

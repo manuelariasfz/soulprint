@@ -28,6 +28,17 @@ def eprint(*args):
     print(*args, file=sys.stderr)
 
 
+# ── Protocol Constants (espejo de PROTOCOL en soulprint-core) ─────────────────
+# IMPORTANTE: estos valores deben mantenerse sincronizados con
+#   packages/core/src/protocol-constants.ts → PROTOCOL
+# Son INMUTABLES a nivel de protocolo. No modificar sin un nuevo SIP.
+
+FACE_SIM_DOC_SELFIE    = 0.35   # PROTOCOL.FACE_SIM_DOC_SELFIE
+FACE_SIM_SELFIE_SELFIE = 0.65   # PROTOCOL.FACE_SIM_SELFIE_SELFIE
+FACE_KEY_DIMS          = 32     # PROTOCOL.FACE_KEY_DIMS
+FACE_KEY_PRECISION     = 1      # PROTOCOL.FACE_KEY_PRECISION
+
+
 # ── Pre-procesamiento de imagen ────────────────────────────────────────────────
 
 def fix_exif_rotation(img):
@@ -208,7 +219,7 @@ def cosine_similarity(a, b) -> float:
     return float(np.dot(a, b))
 
 
-def quantize_embedding(embedding, precision: int = 1):
+def quantize_embedding(embedding, precision: int = FACE_KEY_PRECISION):
     """
     Cuantiza el embedding para derivar nullifier determinístico.
     precision=1 (0.1 steps) absorbe ruido natural de InsightFace (±0.01).
@@ -285,7 +296,7 @@ def main():
     parser = argparse.ArgumentParser(description="Soulprint face match")
     parser.add_argument("--selfie",   required=True,  help="Path selfie del usuario")
     parser.add_argument("--document", required=True,  help="Path foto del documento")
-    parser.add_argument("--min-sim",  type=float, default=0.35, help="Similitud mínima")
+    parser.add_argument("--min-sim",  type=float, default=FACE_SIM_DOC_SELFIE, help="Similitud mínima (PROTOCOL.FACE_SIM_DOC_SELFIE)")
     parser.add_argument("--liveness", action="store_true", help="Verificar liveness")
     args = parser.parse_args()
 
@@ -351,7 +362,7 @@ def main():
         )
 
     # Embedding cuantizado para derivar nullifier (determinístico entre sesiones)
-    quantized = quantize_embedding(selfie_emb, precision=1)
+    quantized = quantize_embedding(selfie_emb, precision=FACE_KEY_PRECISION)
 
     result = {
         "match":      match,

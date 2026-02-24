@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join }           from "node:path";
 // @ts-ignore — snarkjs sin tipos completos
 import snarkjs             from "snarkjs";
+import { PROTOCOL }        from "soulprint-core";
 
 const KEYS_DIR  = join(__dirname, "..", "keys");
 const BUILD_DIR = join(__dirname, "..", "build");
@@ -67,9 +68,9 @@ export async function computeNullifier(
 export async function faceEmbeddingToKey(quantizedEmbedding: number[]): Promise<bigint> {
   const poseidon = await getPoseidon();
 
-  // Cuantizar a 1 decimal para absorber ruido de ±0.03 (ruido real InsightFace)
-  const PRECISION = 1;  // 0.1 pasos — robusto contra ruido fotográfico real
-  const DIMS      = 32; // primeras 32 dimensiones
+  // Cuantizar según PROTOCOL.FACE_KEY_PRECISION (1 decimal = pasos 0.1, robusto ante ±0.03)
+  const PRECISION = PROTOCOL.FACE_KEY_PRECISION;   // INAMOVIBLE — Object.freeze()
+  const DIMS      = PROTOCOL.FACE_KEY_DIMS;         // INAMOVIBLE — Object.freeze()
 
   const stabilized = quantizedEmbedding
     .slice(0, DIMS)

@@ -1,4 +1,4 @@
-import { generateKeypair, deriveNullifier, createToken, CredentialType, SoulprintKeypair, sign } from "soulprint-core";
+import { generateKeypair, deriveNullifier, createToken, CredentialType, SoulprintKeypair, sign, PROTOCOL } from "soulprint-core";
 import { ocrCedula, quickValidateImage }     from "./document/ocr.js";
 import { matchFaceWithDocument }              from "./face/face-match.js";
 import { existsSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
@@ -70,7 +70,7 @@ export async function verifyIdentity(opts: VerificationOptions): Promise<Verific
   log("Verificando coincidencia facial (iniciando proceso de IA)...");
   const faceResult = await matchFaceWithDocument(
     opts.selfiePhoto, opts.documentPhoto,
-    { minSimilarity: opts.minFaceSim ?? 0.35, checkLiveness: opts.checkLiveness, verbose: opts.verbose }
+    { minSimilarity: opts.minFaceSim ?? PROTOCOL.FACE_SIM_DOC_SELFIE, checkLiveness: opts.checkLiveness, verbose: opts.verbose }
   );
   if (!faceResult.match) { errors.push(...faceResult.errors); steps.face_match = "fail"; return { success: false, errors, steps }; }
   steps.face_match = "ok";

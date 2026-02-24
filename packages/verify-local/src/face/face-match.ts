@@ -1,6 +1,7 @@
 import { spawn }       from "node:child_process";
 import { join }        from "node:path";
 import { existsSync }  from "node:fs";
+import { PROTOCOL }    from "soulprint-core";
 
 export interface FaceMatchResult {
   match:       boolean;
@@ -11,7 +12,7 @@ export interface FaceMatchResult {
 }
 
 export interface FaceMatchOptions {
-  minSimilarity?: number;   // default 0.35 (doc-vs-selfie); use 0.65 for selfie-vs-selfie
+  minSimilarity?: number;   // default PROTOCOL.FACE_SIM_DOC_SELFIE (0.35); use PROTOCOL.FACE_SIM_SELFIE_SELFIE (0.65) para re-verificación
   checkLiveness?: boolean;  // default false (requiere más proceso)
   verbose?:       boolean;
 }
@@ -36,7 +37,7 @@ export async function matchFaceWithDocument(
   documentPhoto:  string,
   opts: FaceMatchOptions = {}
 ): Promise<FaceMatchResult> {
-  const minSim = opts.minSimilarity ?? 0.35;
+  const minSim = opts.minSimilarity ?? PROTOCOL.FACE_SIM_DOC_SELFIE;
 
   // Verificar que existe el script Python
   if (!existsSync(PYTHON_SCRIPT)) {
