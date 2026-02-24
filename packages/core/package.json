@@ -6,15 +6,16 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
-    "test":  "node --test dist/**/*.test.js"
+    "test": "node --test dist/**/*.test.js"
   },
   "dependencies": {
-    "@noble/curves":  "^1.4.0",
-    "@noble/hashes":  "^1.4.0",
-    "multiformats":   "^13.1.0"
+    "@noble/curves": "^1.4.0",
+    "@noble/hashes": "^1.4.0",
+    "bs58": "^6.0.0",
+    "multiformats": "^13.1.0"
   },
   "devDependencies": {
-    "typescript": "^5.4.0",
-    "@types/node": "^20.0.0"
+    "@types/node": "^20.0.0",
+    "typescript": "^5.4.0"
   }
 }

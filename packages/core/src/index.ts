@@ -1,7 +1,7 @@
 import { ed25519 }   from "@noble/curves/ed25519";
 import { sha256 }     from "@noble/hashes/sha256";
 import { bytesToHex, hexToBytes, randomBytes } from "@noble/curves/abstract/utils";
-import { base58btc }  from "multiformats/bases/base58";
+import bs58           from "bs58";
 
 // ── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -19,6 +19,7 @@ export interface SoulprintToken {
   country?:     string;
   credentials:  CredentialType[];
   nullifier:    string;
+  zkp?:         string;        // ZK proof serializado (base64url) — optional
   issued:       number;
   expires:      number;
   network_sig?: string;
@@ -56,8 +57,8 @@ export function keypairFromPrivateKey(privateKey: Uint8Array): SoulprintKeypair 
  */
 function publicKeyToDID(publicKey: Uint8Array): string {
   const multicodec = new Uint8Array([0xed, 0x01, ...publicKey]);
-  const encoded    = base58btc.encode(multicodec);
-  return `did:key:${encoded}`;
+  const encoded    = bs58.encode(multicodec);
+  return `did:key:z${encoded}`;
 }
 
 // ── Nullifier ─────────────────────────────────────────────────────────────────
@@ -128,11 +129,10 @@ export function verify(payload: object, signature: string, did: string): boolean
 }
 
 function didToPublicKey(did: string): Uint8Array {
-  if (!did.startsWith("did:key:")) throw new Error("Solo did:key soportado");
-  const encoded    = did.replace("did:key:", "");
-  const multicodec = base58btc.decode(encoded);
-  // Saltar los 2 bytes del prefijo multicodec (0xed 0x01)
-  return multicodec.slice(2);
+  if (!did.startsWith("did:key:z")) throw new Error("Solo did:key:z... soportado");
+  const encoded    = did.replace("did:key:z", "");
+  const multicodec = bs58.decode(encoded);
+  return multicodec.slice(2); // saltar 0xed 0x01
 }
 
 // ── SPT Token ─────────────────────────────────────────────────────────────────
@@ -145,7 +145,7 @@ export function createToken(
   keypair:     SoulprintKeypair,
   nullifier:   string,
   credentials: CredentialType[],
-  options:     { lifetimeSeconds?: number; country?: string } = {}
+  options:     { lifetimeSeconds?: number; country?: string; zkProof?: string } = {}
 ): string {
   const now = Math.floor(Date.now() / 1000);
 
@@ -157,6 +157,7 @@ export function createToken(
     country:     options.country,
     credentials,
     nullifier,
+    ...(options.zkProof ? { zkp: options.zkProof } : {}),
     issued:      now,
     expires:     now + (options.lifetimeSeconds ?? 86400),
   };

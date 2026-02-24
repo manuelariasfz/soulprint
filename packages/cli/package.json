@@ -6,8 +6,9 @@
   "main": "dist/index.js",
   "scripts": { "build": "tsc" },
   "dependencies": {
-    "@soulprint/core":        "workspace:*",
-    "@soulprint/verify-local":"workspace:*"
+    "@soulprint/core":         "workspace:*",
+    "@soulprint/verify-local": "workspace:*",
+    "@soulprint/network":      "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.4.0",

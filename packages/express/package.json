@@ -1,0 +1,25 @@
+{
+  "name": "@soulprint/express",
+  "version": "0.1.0",
+  "description": "Soulprint Express/Fastify middleware — protect any REST API with 1 line",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@soulprint/core": "workspace:*"
+  },
+  "peerDependencies": {
+    "express": ">=4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "express": { "optional": true }
+  },
+  "devDependencies": {
+    "typescript":     "^5.4.0",
+    "@types/node":    "^20.0.0",
+    "@types/express": "^4.17.0"
+  },
+  "keywords": ["soulprint", "express", "fastify", "middleware", "kyc", "identity", "ai-agents"]
+}

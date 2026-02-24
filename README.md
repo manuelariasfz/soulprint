@@ -5,7 +5,7 @@
 Soulprint lets any AI bot prove there's a verified human behind it — without revealing who that human is. No companies, no servers, no paid APIs. Just cryptographic proof.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Phase](https://img.shields.io/badge/phase-1%2F4%20%E2%80%94%20local%20verification-blue)]()
+[![Phase](https://img.shields.io/badge/MVP-phases%201--3%20complete-green)]()
 [![Built with](https://img.shields.io/badge/built%20with-Circom%20%2B%20snarkjs%20%2B%20InsightFace-purple)]()
 
 ---
@@ -30,62 +30,148 @@ AI agents are acting on behalf of humans: booking flights, calling APIs, making 
    • ZK proof generated: "I verified my identity" without revealing any data
    • Photos deleted from memory
               ↓
-3. ZK proof broadcast to P2P validator network (5/8 nodes sign)
+3. ZK proof + SPT broadcast to validator node (verifies in 25ms, offline)
               ↓
-4. Soulprint Token (SPT) issued — a signed JWT with trust score, no PII
+4. Soulprint Token (SPT) stored in ~/.soulprint/token.spt — valid 24h
               ↓
 5. Any MCP server or API verifies in <50ms, offline, for free
 ```
 
-**What the verifier knows:** ✅ Real human, verified Colombian ID  
+**What the verifier knows:** ✅ Real human, verified Colombian ID, trust score  
 **What the verifier doesn't know:** 🔒 Name, cedula number, face, birthdate
 
 ---
 
 ## Quick Start
 
-### Install & Verify Your Identity
+### 1. Install Python deps (face recognition)
 
 ```bash
-# Install Python dependencies (face recognition — one time)
 npx soulprint install-deps
+```
 
-# Verify your identity (photos stay on your device)
+### 2. Verify your identity
+
+```bash
 npx soulprint verify-me \
   --selfie path/to/selfie.jpg \
   --document path/to/cedula.jpg
+```
 
-# Show your current Soulprint Token
+Output:
+```
+🔐 Soulprint — Verificación de identidad
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ✅ Validación de imágenes
+  ✅ OCR del documento
+  ✅ Coincidencia facial
+  ✅ Derivación de nullifier
+  ✅ Generación de ZK proof
+  ✅ Emisión del token SPT
+
+  DID:          did:key:z6Mk...
+  Trust Score:  45/100
+  ZK Proof:     ✅ incluido
+  Tiempo:       3.2s
+```
+
+### 3. Show your token
+
+```bash
 npx soulprint show
 ```
 
-### Protect Any MCP Server (3 lines)
+### 4. Renew (no re-verify needed)
 
-```typescript
-import { soulprint } from "@soulprint/mcp"
-
-// Only verified humans can call this MCP
-server.use(soulprint({ minScore: 60 }))
+```bash
+npx soulprint renew
 ```
 
-### Protect Any REST API
+### 5. Run a validator node
 
-```typescript
-import { soulprint } from "@soulprint/express"
-
-app.use(soulprint({ minScore: 40, require: "KYCFull" }))
+```bash
+npx soulprint node --port 4888
 ```
 
-### Verify a Token Manually
+---
+
+## Protect Any MCP Server (3 lines)
 
 ```typescript
-import { decodeToken } from "@soulprint/core"
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { soulprint } from "@soulprint/mcp";
 
-const token = decodeToken(req.headers["x-soulprint"])
-if (!token || token.score < 60) return res.status(403).json({ error: "Unverified bot" })
-console.log(token.level)  // "KYCFull"
-console.log(token.score)  // 80
-// token does NOT contain name, cedula, or any PII
+const server = new McpServer({ name: "my-server", version: "1.0" });
+server.use(soulprint({ minScore: 60 }));  // require KYC-verified humans
+```
+
+The client must include the SPT in capabilities:
+```json
+{
+  "capabilities": {
+    "identity": { "soulprint": "<token>" }
+  }
+}
+```
+
+Or in the HTTP header: `X-Soulprint: <token>`
+
+---
+
+## Protect Any REST API
+
+```typescript
+import express from "express";
+import { soulprint } from "@soulprint/express";
+
+const app = express();
+
+// Protect entire API
+app.use(soulprint({ minScore: 40 }));
+
+// Or specific routes
+app.post("/sensitive", soulprint({ require: ["DocumentVerified", "FaceMatch"] }), handler);
+
+// Access the verified identity
+app.get("/me", soulprint({ minScore: 20 }), (req, res) => {
+  res.json({
+    nullifier: req.soulprint!.nullifier,  // unique per human, no PII
+    score:     req.soulprint!.score,
+  });
+});
+```
+
+### Fastify
+
+```typescript
+import { soulprintFastify } from "@soulprint/express";
+
+await fastify.register(soulprintFastify, { minScore: 60 });
+
+fastify.get("/me", async (request) => ({
+  nullifier: request.soulprint?.nullifier,
+}));
+```
+
+---
+
+## Run a Validator Node
+
+Anyone can run a validator node. Nodes verify ZK proofs and maintain an anti-Sybil registry. No special hardware needed — any machine can be a node.
+
+```bash
+# Run locally
+npx soulprint node --port 4888
+
+# Or as a background service
+SOULPRINT_PORT=4888 node dist/server.js &
+```
+
+Node API:
+```
+GET  /info              — node info (DID, version, stats)
+POST /verify            — verify ZK proof + co-sign SPT
+GET  /nullifier/:hash   — check if nullifier is registered (anti-Sybil)
 ```
 
 ---
@@ -94,13 +180,13 @@ console.log(token.score)  // 80
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  Layer 4 — SDK (@soulprint/mcp, express, js, python)    │
+│  Layer 4 — SDKs (@soulprint/mcp, express)      ✅ Done  │
 ├─────────────────────────────────────────────────────────┤
-│  Layer 3 — P2P Validator Network (libp2p + IPFS)        │
+│  Layer 3 — Validator Nodes (HTTP + anti-Sybil)  ✅ Done │
 ├─────────────────────────────────────────────────────────┤
-│  Layer 2 — ZK Proof (snarkjs + Circom + Poseidon)       │
+│  Layer 2 — ZK Proofs (Circom + snarkjs)         ✅ Done │
 ├─────────────────────────────────────────────────────────┤
-│  Layer 1 — Local Verification (Face + OCR on-demand)    │
+│  Layer 1 — Local Verification (Face + OCR)      ✅ Done │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -116,17 +202,17 @@ After verify:     ~8MB RAM   (subprocess exits → memory freed)
 
 ---
 
-## Monorepo Packages
+## Packages
 
-| Package | Description | Status |
+| Package | Description | Install |
 |---|---|---|
-| [`@soulprint/core`](packages/core) | DID generation, SPT tokens, Poseidon nullifier | ✅ Done |
-| [`@soulprint/verify-local`](packages/verify-local) | OCR + face match (on-demand subprocess) | ✅ Done |
-| [`@soulprint/zkp`](packages/zkp) | Circom circuit + snarkjs prover/verifier | ✅ Done |
-| [`@soulprint/cli`](packages/cli) | `npx soulprint verify-me` | ✅ Done |
-| `@soulprint/network` | P2P validator nodes (libp2p) | 🚧 Phase 3 |
-| `@soulprint/mcp` | MCP server middleware | 🚧 Phase 4 |
-| `@soulprint/express` | Express/Fastify middleware | 🚧 Phase 4 |
+| [`@soulprint/core`](packages/core) | DID, SPT tokens, Poseidon nullifier | `npm i @soulprint/core` |
+| [`@soulprint/verify-local`](packages/verify-local) | OCR + face match (on-demand) | `npm i @soulprint/verify-local` |
+| [`@soulprint/zkp`](packages/zkp) | Circom circuit + snarkjs prover | `npm i @soulprint/zkp` |
+| [`@soulprint/network`](packages/network) | Validator node HTTP server | `npm i @soulprint/network` |
+| [`@soulprint/mcp`](packages/mcp) | MCP middleware (3 lines) | `npm i @soulprint/mcp` |
+| [`@soulprint/express`](packages/express) | Express/Fastify middleware | `npm i @soulprint/express` |
+| [`@soulprint/cli`](packages/cli) | `npx soulprint` CLI | `npm i -g @soulprint/cli` |
 
 ---
 
@@ -147,27 +233,27 @@ Without revealing any of the private inputs.
 - Proof generation: ~600ms on a laptop
 - Proof verification: ~25ms offline
 
-```
-soulprint verify-me
-  → generates ZK proof locally
-  → proof size: ~723 bytes
-  → verifier knows: trust score, country, credential types
-  → verifier does NOT know: name, cedula number, face data
-```
+---
 
-### Anti-Sybil Protection
+## Soulprint Token (SPT)
 
-The nullifier is derived from **biometric + document data**, not a random secret:
+A base64url-encoded signed JWT. **Contains no PII.**
 
+```json
+{
+  "sip":         "1",
+  "did":         "did:key:z6MkhaXgBZ...",
+  "score":       45,
+  "level":       "KYCFull",
+  "country":     "CO",
+  "credentials": ["DocumentVerified", "FaceMatch"],
+  "nullifier":   "0x7090787188...",
+  "zkp":         "eyJwIjp7InBpX2EiOlsi...",
+  "issued":      1740000000,
+  "expires":     1740086400,
+  "sig":         "ed25519_signature"
+}
 ```
-nullifier = Poseidon(cedula_number, birthdate, face_key)
-face_key  = Poseidon(quantized_face_embedding[0..31])
-```
-
-This means:
-- Same person, different device → **same nullifier** (no double registration)
-- Different person, same cedula → **different nullifier** (face doesn't match)
-- Person registers twice → nullifier already exists → **rejected**
 
 ---
 
@@ -183,36 +269,30 @@ DocumentVerified    | +25
 FaceMatch           | +20
 BiometricBound      | +10
                     |
-KYCFull (doc+face)  |  80/100
+KYCFull (doc+face)  |  45/100
 ```
 
 Services choose their own threshold:
 ```typescript
 soulprint({ minScore: 20 })   // email verified is enough
-soulprint({ minScore: 60 })   // require KYC
-soulprint({ minScore: 80 })   // require full biometric KYC
+soulprint({ minScore: 45 })   // require doc + face KYC
+soulprint({ minScore: 80 })   // require full biometric + extra
 ```
 
 ---
 
-## Soulprint Token (SPT) Format
+## Anti-Sybil Protection
 
-A base64url-encoded signed JWT. **Contains no PII.**
+The nullifier is derived from **biometric + document data**:
 
-```json
-{
-  "sip":         "1",
-  "did":         "did:key:z6MkhaXgBZ...",
-  "score":       80,
-  "level":       "KYCFull",
-  "country":     "CO",
-  "credentials": ["DocumentVerified", "FaceMatch"],
-  "nullifier":   "0x7090787188862170...",
-  "issued":      1740000000,
-  "expires":     1740086400,
-  "sig":         "ed25519_signature"
-}
 ```
+nullifier = Poseidon(cedula_number, birthdate, face_key)
+face_key  = Poseidon(quantized_face_embedding[0..31])
+```
+
+- Same person, different device → **same nullifier**
+- Different person, same cedula → **different nullifier** (face doesn't match)
+- Person registers twice → nullifier already exists → **rejected by validator**
 
 ---
 
@@ -228,61 +308,33 @@ A base64url-encoded signed JWT. **Contains no PII.**
 ## Development Setup
 
 ```bash
-# Clone
 git clone https://github.com/manuelariasfz/soulprint
 cd soulprint
-
-# Install (Node 18+)
 pnpm install
-
-# Build all packages
 pnpm build
+```
 
-# Run ZK tests (no circuit compilation needed)
+### Run integration tests
+
+```bash
+# ZK proof tests (no circuit compilation needed)
 cd packages/zkp && node dist/prover.test.js
 
-# Compile ZK circuit (first time only, ~2 min)
+# Full integration tests
+node -e "require('./packages/core/dist/index.js')"
+```
+
+### Compile ZK circuit (first time only)
+
+```bash
 pnpm --filter @soulprint/zkp build:circuits
 ```
 
-### Python dependencies (for face verification)
+### Python dependencies
 
 ```bash
-# Python 3.8+ required
 pip3 install insightface opencv-python-headless onnxruntime
-
-# Or use the CLI helper
-npx soulprint install-deps
 ```
-
----
-
-## Roadmap
-
-```
-✅ Phase 1 — Local verification (cedula OCR + face match + nullifier)
-✅ Phase 2 — ZK proofs (Circom circuit + snarkjs prover/verifier)
-🚧 Phase 3 — P2P validator network (libp2p + IPFS attestations)
-🚧 Phase 4 — SDKs (@soulprint/mcp, express, js, python)
-🔮 Phase 5 — Multi-country support (passport, DNI, etc.)
-🔮 Phase 6 — DAO governance for trust registry
-```
-
----
-
-## Why Decentralized?
-
-Most KYC solutions require:
-- A company that processes your documents
-- A server that stores your identity
-- A fee per verification
-
-**Soulprint requires:**
-- Your device (for local verification)
-- Other bots running Soulprint (for P2P consensus)
-- An internet connection (for broadcasting the proof)
-
-The network is the bots. The more people use it, the more secure it becomes.
 
 ---
 
@@ -291,27 +343,38 @@ The network is the bots. The more people use it, the more secure it becomes.
 | Threat | Defense |
 |---|---|
 | Someone learns your DID | DID is public — harmless without private key |
-| Private key theft | Key lives in `~/.soulprint/` — only owner can read |
-| Fake cedula image | Face match required — DeepFake detection planned |
-| Register twice | Nullifier uniqueness on P2P network |
+| Private key theft | Key lives in `~/.soulprint/` (mode 0600) |
+| Fake cedula image | Face match required |
+| Register twice | Nullifier uniqueness on validator network |
 | Replay attack | Token expires in 24h + context_tag per service |
-| Sybil attack | Biometric nullifier (same face = same nullifier) |
-| Compromised validator | Threshold: 3/5 validators must agree |
+| Sybil attack | Biometric nullifier — same face = same nullifier |
+| DID substitution attack | Ed25519 signature bound to DID keypair |
+
+---
+
+## Roadmap
+
+```
+✅ Phase 1 — Local verification (cedula OCR + face match + nullifier)
+✅ Phase 2 — ZK proofs (Circom circuit + snarkjs prover/verifier)
+✅ Phase 3 — Validator nodes (HTTP + ZK verify + anti-Sybil registry)
+✅ Phase 4 — SDKs (@soulprint/mcp, @soulprint/express)
+🚧 Phase 5 — P2P network (libp2p DHT, multi-node consensus)
+🚧 Phase 6 — Multi-country support (passport, DNI, CURP, RUT...)
+🔮 Phase 7 — On-chain nullifier registry (optional, EVM-compatible)
+```
+
+---
+
+## Protocol Spec
+
+See [specs/SIP-v0.1.md](specs/SIP-v0.1.md) for the Soulprint Identity Protocol specification.
 
 ---
 
 ## Contributing
 
-```bash
-# Run all tests
-pnpm test
-
-# Add a new country
-# → packages/verify-local/src/document/<country>-validator.ts
-# → Update the Circom circuit if the document structure differs
-```
-
-Issues and PRs welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md). All countries welcome — add your ID document format in `packages/verify-local/src/document/`.
 
 ---
 

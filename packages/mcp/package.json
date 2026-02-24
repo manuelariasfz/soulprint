@@ -1,0 +1,24 @@
+{
+  "name": "@soulprint/mcp",
+  "version": "0.1.0",
+  "description": "Soulprint MCP middleware — protect any MCP server with 3 lines of code",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc"
+  },
+  "peerDependencies": {
+    "@modelcontextprotocol/sdk": ">=1.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@modelcontextprotocol/sdk": { "optional": true }
+  },
+  "dependencies": {
+    "@soulprint/core": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript":  "^5.4.0",
+    "@types/node": "^20.0.0"
+  },
+  "keywords": ["soulprint", "mcp", "kyc", "identity", "zero-knowledge", "ai-agents"]
+}

@@ -1,0 +1,22 @@
+{
+  "name": "@soulprint/network",
+  "version": "0.1.0",
+  "description": "Soulprint validator node — HTTP server that verifies ZK proofs and co-signs SPTs",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "soulprint-node": "dist/server.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "@soulprint/core": "workspace:*",
+    "@soulprint/zkp":  "workspace:*"
+  },
+  "devDependencies": {
+    "typescript":  "^5.4.0",
+    "@types/node": "^20.0.0"
+  }
+}

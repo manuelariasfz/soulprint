@@ -1,25 +1,31 @@
 #!/usr/bin/env node
 /**
- * soulprint CLI
- * npx soulprint verify-me --selfie ./yo.jpg --document ./cedula.jpg
+ * @soulprint/cli
+ * npx soulprint <command> [options]
  */
 
-import { verifyIdentity } from "@soulprint/verify-local";
-import { decodeToken }    from "@soulprint/core";
-import { readFileSync, writeFileSync } from "node:fs";
-import { join }           from "node:path";
-import { homedir }        from "node:os";
+import { verifyIdentity }                    from "@soulprint/verify-local";
+import { decodeToken }                       from "@soulprint/core";
+import { readFileSync, writeFileSync,
+         existsSync, mkdirSync }             from "node:fs";
+import { join }                              from "node:path";
+import { homedir }                           from "node:os";
+
+const SOULPRINT_DIR = join(homedir(), ".soulprint");
+const TOKEN_FILE    = join(SOULPRINT_DIR, "token.spt");
 
 const args = process.argv.slice(2);
 const cmd  = args[0];
 
 async function main() {
   switch (cmd) {
-    case "verify-me":   return await cmdVerifyMe();
-    case "show":        return cmdShow();
-    case "install-deps":return cmdInstallDeps();
+    case "verify-me":    return await cmdVerifyMe();
+    case "show":         return cmdShow();
+    case "node":         return await cmdNode();
+    case "renew":        return await cmdRenew();
+    case "install-deps": return await cmdInstallDeps();
     case "help":
-    default:            return cmdHelp();
+    default:             return cmdHelp();
   }
 }
 
@@ -30,41 +36,48 @@ async function cmdVerifyMe() {
   const document = getArg("--document");
   const verbose  = args.includes("--verbose");
   const liveness = args.includes("--liveness");
+  const noZKP    = args.includes("--no-zkp");
   const minSim   = parseFloat(getArg("--min-sim") ?? "0.65");
 
   if (!selfie || !document) {
     console.error("❌ Uso: soulprint verify-me --selfie <foto.jpg> --document <cedula.jpg>");
-    console.error("   Opciones:");
-    console.error("     --verbose         Mostrar progreso detallado");
-    console.error("     --liveness        Verificar que no es foto de foto");
-    console.error("     --min-sim <0.65>  Similitud mínima requerida (0.0-1.0)");
     process.exit(1);
   }
 
-  console.log("🔍 Soulprint — Verificación de identidad local");
+  console.log("");
+  console.log("🔐 Soulprint — Verificación de identidad");
   console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
   console.log("📂 Tus datos NUNCA salen de este dispositivo");
-  console.log("🔒 Los modelos de IA se cargan y se borran de memoria automáticamente");
+  console.log("🧠 Los modelos de IA se cargan y borran de RAM automáticamente");
   console.log("");
 
-  const startTime = Date.now();
+  const t0 = Date.now();
 
   const result = await verifyIdentity({
-    selfiePhoto:    selfie,
-    documentPhoto:  document,
+    selfiePhoto:   selfie,
+    documentPhoto: document,
     verbose,
-    minFaceSim:     minSim,
-    checkLiveness:  liveness,
+    minFaceSim:    minSim,
+    checkLiveness: liveness,
+    withZKP:       !noZKP,
   });
 
-  const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+  const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
 
   console.log("");
-  console.log("Resultado de cada paso:");
-  Object.entries(result.steps).forEach(([step, status]) => {
-    const icon = status === "ok" ? "✅" : status === "fail" ? "❌" : "⏭";
-    console.log(`  ${icon}  ${step.replace(/_/g, " ")}`);
-  });
+  console.log("Pasos de verificación:");
+  const icons: Record<string, string> = { ok: "✅", fail: "❌", skip: "⏭" };
+  const labels: Record<string, string> = {
+    image_check:       "Validación de imágenes",
+    ocr:               "OCR del documento",
+    face_match:        "Coincidencia facial",
+    nullifier_derived: "Derivación de nullifier",
+    zk_proof:          "Generación de ZK proof",
+    token_created:     "Emisión del token SPT",
+  };
+  for (const [step, status] of Object.entries(result.steps)) {
+    console.log(`  ${icons[status]} ${labels[step] ?? step}`);
+  }
 
   if (!result.success) {
     console.log("");
@@ -73,52 +86,137 @@ async function cmdVerifyMe() {
     process.exit(1);
   }
 
-  // Guardar token en disco
-  const tokenFile = join(homedir(), ".soulprint", "token.spt");
-  writeFileSync(tokenFile, result.token!, "utf8");
+  if (!existsSync(SOULPRINT_DIR)) mkdirSync(SOULPRINT_DIR, { recursive: true, mode: 0o700 });
+  writeFileSync(TOKEN_FILE, result.token!, "utf8");
 
   console.log("");
+  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
   console.log("✅ Identidad verificada exitosamente");
-  console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
-  console.log(`🆔 DID:         ${result.did}`);
-  console.log(`📊 Trust Score: ${result.score}/100`);
-  console.log(`⏱  Tiempo:      ${elapsed}s`);
-  console.log(`💾 Token:       ${tokenFile}`);
   console.log("");
-  console.log("Tu token Soulprint está listo. Los servicios compatibles");
-  console.log("lo usarán automáticamente para identificar tu bot.");
+  console.log(`  DID:          ${result.did}`);
+  console.log(`  Trust Score:  ${result.score}/100`);
+  console.log(`  ZK Proof:     ${result.zkProof ? "✅ incluido" : "⏭ omitido"}`);
+  console.log(`  Token:        ${TOKEN_FILE}`);
+  console.log(`  Tiempo:       ${elapsed}s`);
+  console.log("");
+  console.log("Tu identidad está verificada. Los servicios compatibles con");
+  console.log("Soulprint pueden confirmar que hay un humano real detrás de tu bot.");
+  console.log("");
+  console.log("Para ver tu token: soulprint show");
+  console.log("Para correr un nodo validador: soulprint node");
+  console.log("");
 }
 
 // ── show ──────────────────────────────────────────────────────────────────────
 
 function cmdShow() {
-  const tokenFile = join(homedir(), ".soulprint", "token.spt");
-  try {
-    const raw   = readFileSync(tokenFile, "utf8").trim();
-    const token = decodeToken(raw);
-
-    if (!token) {
-      console.error("❌ Token inválido o expirado. Ejecuta: soulprint verify-me --selfie ... --document ...");
-      process.exit(1);
-    }
-
-    console.log("📋 Tu Soulprint Token:");
-    console.log(`  DID:         ${token.did}`);
-    console.log(`  Trust Score: ${token.score}/100`);
-    console.log(`  Nivel:       ${token.level}`);
-    console.log(`  País:        ${token.country ?? "desconocido"}`);
-    console.log(`  Credenciales: ${token.credentials.join(", ")}`);
-    console.log(`  Expira:      ${new Date(token.expires * 1000).toLocaleString()}`);
-  } catch {
-    console.error("❌ No tienes token. Ejecuta: soulprint verify-me --selfie ... --document ...");
+  if (!existsSync(TOKEN_FILE)) {
+    console.error("❌ No tienes token. Ejecuta: soulprint verify-me --selfie yo.jpg --document cedula.jpg");
     process.exit(1);
   }
+
+  const raw   = readFileSync(TOKEN_FILE, "utf8").trim();
+  const token = decodeToken(raw);
+
+  if (!token) {
+    console.error("❌ Token inválido o expirado. Ejecuta: soulprint renew o soulprint verify-me ...");
+    process.exit(1);
+  }
+
+  const expiresIn = Math.floor((token.expires * 1000 - Date.now()) / 1000 / 3600);
+
+  console.log("");
+  console.log("📋 Tu Soulprint Token");
+  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+  console.log(`  DID:          ${token.did}`);
+  console.log(`  Trust Score:  ${token.score}/100`);
+  console.log(`  Nivel:        ${token.level}`);
+  console.log(`  País:         ${token.country ?? "—"}`);
+  console.log(`  Credenciales: ${token.credentials.join(", ")}`);
+  console.log(`  ZK Proof:     ${(token as any).zkp ? "✅ incluido" : "❌ no incluido"}`);
+  console.log(`  Expira en:    ${expiresIn}h`);
+  console.log(`  Nullifier:    ${token.nullifier.slice(0, 18)}...`);
+  console.log("");
+  console.log("Token (para copiar/pegar en la configuración de tu agente):");
+  console.log("");
+  console.log(raw);
+  console.log("");
+}
+
+// ── node ──────────────────────────────────────────────────────────────────────
+
+async function cmdNode() {
+  const port    = parseInt(getArg("--port") ?? "4888");
+  const verbose = args.includes("--verbose");
+
+  console.log("");
+  console.log("🌐 Soulprint Validator Node");
+  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+  console.log(`Corriendo nodo validador en el puerto ${port}...`);
+  console.log("Para detener: Ctrl+C");
+  console.log("");
+
+  try {
+    const { startValidatorNode } = await import("@soulprint/network");
+    startValidatorNode(port);
+  } catch (e: any) {
+    if (e.code === "ERR_MODULE_NOT_FOUND") {
+      console.error("❌ @soulprint/network no está instalado.");
+      console.error("   Instala con: npm install -g soulprint");
+    } else {
+      throw e;
+    }
+  }
+}
+
+// ── renew ─────────────────────────────────────────────────────────────────────
+
+async function cmdRenew() {
+  console.log("");
+  console.log("🔄 Renovando token Soulprint...");
+
+  if (!existsSync(TOKEN_FILE)) {
+    console.error("❌ No hay token para renovar. Ejecuta: soulprint verify-me ...");
+    process.exit(1);
+  }
+
+  const raw   = readFileSync(TOKEN_FILE, "utf8").trim();
+  const token = decodeToken(raw);
+
+  if (!token) {
+    console.error("❌ Token muy expirado. Debes volver a verificar con: soulprint verify-me ...");
+    process.exit(1);
+  }
+
+  // Re-emitir el token con las mismas credenciales por 24h más
+  // (sin re-verificar cara/documento — solo extiende el lifetime)
+  const { keypairFromPrivateKey, createToken } = await import("@soulprint/core");
+  const keyFile = join(SOULPRINT_DIR, "identity.json");
+
+  if (!existsSync(keyFile)) {
+    console.error("❌ Keypair no encontrado. Debes verificar de nuevo: soulprint verify-me ...");
+    process.exit(1);
+  }
+
+  const stored  = JSON.parse(readFileSync(keyFile, "utf8"));
+  const keypair = keypairFromPrivateKey(new Uint8Array(Buffer.from(stored.privateKey, "hex")));
+
+  const newToken = createToken(keypair, token.nullifier, token.credentials as any, {
+    country: token.country,
+    lifetimeSeconds: 86400,
+  });
+
+  writeFileSync(TOKEN_FILE, newToken, "utf8");
+
+  const exp = new Date(Date.now() + 86400000).toLocaleString();
+  console.log(`✅ Token renovado hasta: ${exp}`);
 }
 
 // ── install-deps ──────────────────────────────────────────────────────────────
 
 async function cmdInstallDeps() {
   const { spawnSync } = await import("node:child_process");
+  console.log("");
   console.log("📦 Instalando dependencias Python para verificación facial...");
   console.log("   (insightface, opencv-python-headless, onnxruntime)");
   console.log("");
@@ -130,7 +228,8 @@ async function cmdInstallDeps() {
   );
 
   if (result.status === 0) {
-    console.log("\n✅ Dependencias instaladas. Ya puedes ejecutar soulprint verify-me");
+    console.log("\n✅ Dependencias instaladas correctamente.");
+    console.log("Ahora puedes ejecutar: soulprint verify-me --selfie yo.jpg --document cedula.jpg");
   } else {
     console.error("\n❌ Error instalando dependencias.");
     console.error("Intenta manualmente: pip3 install insightface opencv-python-headless onnxruntime");
@@ -141,31 +240,49 @@ async function cmdInstallDeps() {
 
 function cmdHelp() {
   console.log(`
-🔐 Soulprint — Identidad verificable para bots IA
+🔐 Soulprint — Identidad verificable para bots de IA
+
+  "Every bot has a soul behind it."
 
 COMANDOS:
 
-  verify-me         Verifica tu identidad con cédula + selfie
-    --selfie        <ruta>   Foto tuya (selfie)
-    --document      <ruta>   Foto de tu cédula de ciudadanía
-    --verbose                Mostrar progreso detallado
-    --liveness               Verificar que la selfie es real (no foto de foto)
-    --min-sim       <float>  Similitud mínima requerida (default: 0.65)
+  verify-me              Verifica tu identidad con cédula + selfie
+    --selfie  <ruta>     Foto tuya (selfie)
+    --document <ruta>    Foto de tu cédula de ciudadanía
+    --verbose            Mostrar progreso detallado
+    --liveness           Verificar que la selfie es real (no foto de foto)
+    --no-zkp             Omitir ZK proof (más rápido, menor privacidad)
+    --min-sim <float>    Similitud mínima requerida (default: 0.65)
 
-  show              Muestra tu token Soulprint actual
+  show                   Muestra tu token Soulprint actual
 
-  install-deps      Instala dependencias Python (InsightFace)
+  renew                  Renueva tu token por 24h sin reverificar
+
+  node                   Corre un nodo validador local
+    --port <número>      Puerto (default: 4888)
+
+  install-deps           Instala dependencias Python (InsightFace)
 
 EJEMPLOS:
 
   npx soulprint install-deps
-  npx soulprint verify-me --selfie yo.jpg --document cedula.jpg
+  npx soulprint verify-me --selfie yo.jpg --document cedula.jpg --verbose
   npx soulprint show
+  npx soulprint node --port 4888
+  npx soulprint renew
 
-PRIVACIDAD:
-  Tus fotos NUNCA salen del dispositivo.
-  Los modelos de IA se cargan solo durante la verificación y se borran al terminar.
-  Solo se guarda un token criptográfico — sin datos personales.
+INTEGRACIÓN (3 líneas):
+
+  // MCP Server
+  import { soulprint } from "@soulprint/mcp";
+  server.use(soulprint({ minScore: 60 }));
+
+  // Express / REST API
+  import { soulprint } from "@soulprint/express";
+  app.use(soulprint({ minScore: 40 }));
+
+MÁS INFORMACIÓN:
+  https://github.com/manuelariasfz/soulprint
 `);
 }
 
