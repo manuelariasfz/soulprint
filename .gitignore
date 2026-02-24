@@ -13,3 +13,9 @@ packages/zkp/build/
 *.jpeg
 *.png
 spa.traineddata
+packages/blockchain/cache/
+packages/blockchain/artifacts/
+packages/blockchain/typechain-types/
+packages/blockchain/deployments/hardhat.json
+packages/blockchain/.env
+packages/blockchain/node_modules/

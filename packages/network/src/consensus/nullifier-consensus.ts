@@ -160,7 +160,7 @@ export class NullifierConsensus extends EventEmitter {
     const minPeers = this.opts.minPeers ?? MIN_PEERS_DEFAULT;
 
     // Modo single: sin suficientes peers, acepta localmente
-    if (this.connectedPeers < minPeers) {
+    if (this.connectedPeers === 0 || this.connectedPeers < minPeers) {
       return this.commitLocal(nullifier, did, 1);
     }
 
@@ -311,8 +311,7 @@ export class NullifierConsensus extends EventEmitter {
       if (accepts < 1) return;
     }
 
-    const entry = this.commitLocal(msg.nullifier, msg.did, accepts);
-    this.emit("committed", entry);
+    this.commitLocal(msg.nullifier, msg.did, accepts);
 
     // Resolver la ronda pendiente (si éste nodo era el proposer)
     const round = this.pendingRounds.get(msg.nullifier);
