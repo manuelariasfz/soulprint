@@ -1,6 +1,6 @@
 {
   "name": "soulprint-zkp",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Soulprint ZK proofs — Circom circuit + snarkjs prover/verifier (844 constraints, Groth16)",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

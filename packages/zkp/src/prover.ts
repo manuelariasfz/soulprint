@@ -2,8 +2,8 @@
 import { buildPoseidon }  from "circomlibjs";
 import { existsSync, readFileSync } from "node:fs";
 import { join }           from "node:path";
-// @ts-ignore — snarkjs sin tipos completos
-import snarkjs             from "snarkjs";
+// @ts-ignore — snarkjs exports CJS with __esModule:true but no default
+import * as snarkjs from "snarkjs";
 import { PROTOCOL }        from "soulprint-core";
 
 const KEYS_DIR  = join(__dirname, "..", "keys");

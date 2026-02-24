@@ -15,6 +15,10 @@ import {
   SessionContext, FARMING_RULES,
 } from "soulprint-core";
 import { verifyProof, deserializeProof } from "soulprint-zkp";
+import {
+  buildChallengeResponse, verifyChallengeResponse, verifyPeerBehavior,
+  ChallengeRequest, ChallengeResponse,
+} from "./peer-challenge.js";
 import { handleCredentialRoute } from "./credentials/index.js";
 import { encryptGossip, decryptGossip } from "./crypto/gossip-cipher.js";
 import { selectGossipPeers, routingStats } from "./crypto/peer-router.js";
@@ -509,6 +513,53 @@ async function handleAttest(req: IncomingMessage, res: ServerResponse, ip: strin
   });
 }
 
+// ── POST /challenge ────────────────────────────────────────────────────────────
+/**
+ * Recibe un challenge de otro peer y responde con los resultados de verificación.
+ * Esto permite a los peers verificar que este nodo ejecuta código ZK no modificado.
+ *
+ * ATAQUE BLOQUEADO:
+ *   - Nodo con ZK bypasseado (siempre true) → falla en invalid_proof
+ *   - Nodo con ZK siempre false → falla en valid_proof
+ *   - Respuesta precalculada → nonce aleatorio la invalida
+ *   - Impersonación → firma Ed25519 la invalida
+ */
+async function handleChallenge(
+  req:         IncomingMessage,
+  res:         ServerResponse,
+  nodeKeypair: SoulprintKeypair,
+) {
+  let body: ChallengeRequest;
+  try { body = await readBody(req) as ChallengeRequest; }
+  catch (e: any) { return json(res, 400, { error: e.message }); }
+
+  if (!body?.challenge_id || !body?.valid_proof || !body?.invalid_proof) {
+    return json(res, 400, { error: "Required: challenge_id, valid_proof, invalid_proof" });
+  }
+
+  // Verificar ventana de tiempo (anti-replay)
+  const nowSecs = Math.floor(Date.now() / 1000);
+  if (nowSecs - (body.issued_at ?? 0) > 30) {
+    return json(res, 400, { error: "Challenge expirado (> 30s)" });
+  }
+
+  // Ejecutar verificación ZK en ambas pruebas
+  const response = await buildChallengeResponse(
+    body,
+    nodeKeypair,
+    async (proof) => {
+      try {
+        const result = await verifyProof(proof);
+        return { valid: result.valid };
+      } catch {
+        return { valid: false };
+      }
+    },
+  );
+
+  json(res, 200, response);
+}
+
 // ── POST /peers/register ──────────────────────────────────────────────────────
 async function handlePeerRegister(req: IncomingMessage, res: ServerResponse) {
   let body: any;
@@ -534,6 +585,22 @@ async function handlePeerRegister(req: IncomingMessage, res: ServerResponse) {
   }
 
   if (peers.includes(url)) return json(res, 200, { ok: true, peers: peers.length, msg: "Already registered" });
+
+  // ── Challenge-Response: verificar que el peer ejecuta código no modificado ─
+  // Solo si el peer tiene el endpoint /challenge (nodos v0.3.6+)
+  const challengeResult = await verifyPeerBehavior(url, 8_000).catch(() => null);
+  if (challengeResult && !challengeResult.passed) {
+    console.warn(`[peer] ❌ ${url} falló challenge-response: ${challengeResult.reason}`);
+    return json(res, 403, {
+      error:   "Peer falló verificación de integridad de código",
+      reason:  challengeResult.reason,
+      latency: challengeResult.latencyMs,
+      hint:    "El peer puede estar ejecutando código ZK modificado.",
+    });
+  }
+  if (challengeResult?.passed) {
+    console.log(`[peer] ✅ ${url} pasó challenge-response (${challengeResult.latencyMs}ms)`);
+  }
 
   peers.push(url);
   savePeers();
@@ -901,6 +968,7 @@ export function startValidatorNode(port: number = PORT) {
     if (cleanUrl === "/protocol"             && req.method === "GET")  return handleProtocol(res);
     if (cleanUrl === "/verify"               && req.method === "POST") return handleVerify(req, res, nodeKeypair, ip);
     if (cleanUrl === "/token/renew"          && req.method === "POST") return handleTokenRenew(req, res, nodeKeypair);
+    if (cleanUrl === "/challenge"            && req.method === "POST") return handleChallenge(req, res, nodeKeypair);
     if (cleanUrl === "/reputation/attest"    && req.method === "POST") return handleAttest(req, res, ip);
     if (cleanUrl === "/peers/register"       && req.method === "POST") return handlePeerRegister(req, res);
     if (cleanUrl === "/peers"                && req.method === "GET")  return handleGetPeers(res);
@@ -1084,6 +1152,7 @@ export function startValidatorNode(port: number = PORT) {
     console.log(`\n   Core endpoints:`);
     console.log(`   POST /verify              verify ZK proof + co-sign`);
     console.log(`   POST /token/renew         auto-renew SPT (pre-emptivo 1h / grace 7d)`);
+    console.log(`   POST /challenge           peer integrity check (ZK challenge-response)`);
     console.log(`   GET  /health              code integrity + governance status`);
     console.log(`   GET  /info                node info`);
     console.log(`   GET  /protocol            protocol constants (immutable)`);
