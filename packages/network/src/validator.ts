@@ -7,6 +7,7 @@ import {
   decodeToken, sign,
   BotAttestation, BotReputation,
   verifyAttestation, computeReputation, defaultReputation,
+  PROTOCOL, isProtocolCompatible, computeTotalScoreWithFloor,
 } from "soulprint-core";
 import { verifyProof, deserializeProof } from "soulprint-zkp";
 import {
@@ -17,7 +18,7 @@ import {
 } from "./p2p.js";
 
 // ── Config ────────────────────────────────────────────────────────────────────
-const PORT         = parseInt(process.env.SOULPRINT_PORT ?? "4888");
+const PORT         = parseInt(process.env.SOULPRINT_PORT ?? String(PROTOCOL.DEFAULT_HTTP_PORT));
 const NODE_DIR     = join(homedir(), ".soulprint", "node");
 const KEYPAIR_FILE = join(NODE_DIR, "node-identity.json");
 const NULLIFIER_DB = join(NODE_DIR, "nullifiers.json");
@@ -26,12 +27,13 @@ const PEERS_DB     = join(NODE_DIR, "peers.json");
 const VERSION      = "0.2.0";
 
 const MAX_BODY_BYTES       = 64 * 1024;
-const RATE_LIMIT_MS        = 60_000;
-const RATE_LIMIT_MAX       = 10;
-const CLOCK_SKEW_MAX       = 300;        // ±5 min
-const MIN_ATTESTER_SCORE   = 60;         // solo servicios verificados emiten attestations
-const ATT_MAX_AGE_SECONDS  = 3600;       // attestation no puede tener >1h de antigüedad
-const GOSSIP_TIMEOUT_MS    = 3_000;      // timeout del gossip HTTP fallback
+// ── Protocol constants (inamovibles — no cambiar directamente aquí) ───────────
+const RATE_LIMIT_MS        = PROTOCOL.RATE_LIMIT_WINDOW_MS;
+const RATE_LIMIT_MAX       = PROTOCOL.RATE_LIMIT_MAX;
+const CLOCK_SKEW_MAX       = PROTOCOL.CLOCK_SKEW_MAX_SECONDS;
+const MIN_ATTESTER_SCORE   = PROTOCOL.MIN_ATTESTER_SCORE;  // 65 — inamovible
+const ATT_MAX_AGE_SECONDS  = PROTOCOL.ATT_MAX_AGE_SECONDS;
+const GOSSIP_TIMEOUT_MS    = PROTOCOL.GOSSIP_TIMEOUT_MS;
 
 // ── P2P Node (Phase 5) ────────────────────────────────────────────────────────
 let p2pNode: SoulprintP2PNode | null = null;
@@ -83,10 +85,12 @@ function saveNullifiers() { writeFileSync(NULLIFIER_DB, JSON.stringify(nullifier
  * Persisted to disk — survives node restarts.
  */
 interface ReputeEntry {
-  score:        number;
-  base:         number;          // score base calculado desde attestations
-  attestations: BotAttestation[];
-  last_updated: number;
+  score:               number;
+  base:                number;          // score base calculado desde attestations
+  attestations:        BotAttestation[];
+  last_updated:        number;
+  identityScore:       number;          // sub-score de identidad — para calcular floor
+  hasDocumentVerified: boolean;         // si tiene DocumentVerified — activa VERIFIED_SCORE_FLOOR
 }
 let repStore: Record<string, ReputeEntry> = {};
 
@@ -107,6 +111,13 @@ function getReputation(did: string): BotReputation {
 
 /**
  * Aplica una nueva attestation al DID objetivo y persiste.
+ *
+ * PROTOCOL ENFORCEMENT:
+ * - Si el bot tiene DocumentVerified, su score total nunca puede caer por
+ *   debajo de PROTOCOL.VERIFIED_SCORE_FLOOR (52) — inamovible.
+ * - Anti-replay: la misma attestation (mismo issuer + timestamp + context)
+ *   no se puede aplicar dos veces.
+ *
  * Retorna la reputación actualizada.
  */
 function applyAttestation(att: BotAttestation): BotReputation {
@@ -126,14 +137,37 @@ function applyAttestation(att: BotAttestation): BotReputation {
   const allAtts = [...prevAtts, att];
   const rep     = computeReputation(allAtts, 10); // base siempre 10
 
+  // ── PROTOCOL FLOOR ENFORCEMENT ─────────────────────────────────────────────
+  // Si el DID tiene DocumentVerified, su score total no puede caer bajo el floor.
+  // La reputación mínima se calcula como: floor - identity_score.
+  // Ejemplo: floor=52, identity=36 → min_rep = max(0, 52-36) = 16
+  // Nunca permitimos que la reputación baje de ese mínimo.
+  const existingToken = existing ? { hasDocument: true } : null; // conservative: assume yes if known
+  const identityFromStore = existing?.identityScore ?? 0;
+  const hasDocument = existing?.hasDocumentVerified ?? false;
+
+  let finalRepScore = rep.score;
+  if (hasDocument) {
+    const minRepForFloor = Math.max(0, PROTOCOL.VERIFIED_SCORE_FLOOR - identityFromStore);
+    finalRepScore = Math.max(finalRepScore, minRepForFloor);
+    if (finalRepScore !== rep.score) {
+      console.log(
+        `[floor] Reputation clamped for ${att.target_did.slice(0,20)}...: ` +
+        `${rep.score} → ${finalRepScore} (VERIFIED_SCORE_FLOOR=${PROTOCOL.VERIFIED_SCORE_FLOOR})`
+      );
+    }
+  }
+
   repStore[att.target_did] = {
-    score:        rep.score,
-    base:         10,
-    attestations: allAtts,
-    last_updated: rep.last_updated,
+    score:              finalRepScore,
+    base:               10,
+    attestations:       allAtts,
+    last_updated:       rep.last_updated,
+    identityScore:      existing?.identityScore ?? 0,
+    hasDocumentVerified: hasDocument,
   };
   saveReputation();
-  return rep;
+  return { score: finalRepScore, attestations: allAtts.length, last_updated: rep.last_updated };
 }
 
 // ── Peers registry (P2P gossip) ───────────────────────────────────────────────
@@ -219,13 +253,13 @@ function handleInfo(res: ServerResponse, nodeKeypair: SoulprintKeypair) {
   json(res, 200, {
     node_did:            nodeKeypair.did,
     version:             VERSION,
-    protocol:            "sip/0.1",
+    protocol:            PROTOCOL.VERSION,
     total_verified:      Object.keys(nullifiers).length,
     total_reputation:    Object.keys(repStore).length,
     known_peers:         peers.length,
     supported_countries: ["CO"],
     capabilities:        ["zk-verify", "anti-sybil", "co-sign", "bot-reputation", "p2p-gossipsub"],
-    rate_limit:          `${RATE_LIMIT_MAX} req/min per IP`,
+    rate_limit:          `${PROTOCOL.RATE_LIMIT_MAX} req/min per IP`,
     // P2P stats (Phase 5)
     p2p: p2pStats ? {
       enabled:      true,
@@ -234,6 +268,32 @@ function handleInfo(res: ServerResponse, nodeKeypair: SoulprintKeypair) {
       pubsub_peers: p2pStats.pubsubPeers,
       multiaddrs:   p2pStats.multiaddrs,
     } : { enabled: false },
+  });
+}
+
+// ── GET /protocol ──────────────────────────────────────────────────────────────
+/**
+ * Expone las constantes de protocolo inamovibles.
+ * Los clientes y otros nodos usan este endpoint para:
+ *  1. Verificar compatibilidad de versión antes de conectarse
+ *  2. Obtener los valores actuales de SCORE_FLOOR y MIN_ATTESTER_SCORE
+ *  3. Validar que el nodo no ha sido modificado para bajar los thresholds
+ */
+function handleProtocol(res: ServerResponse) {
+  json(res, 200, {
+    protocol_version:    PROTOCOL.VERSION,
+    score_floor:         PROTOCOL.SCORE_FLOOR,
+    verified_score_floor: PROTOCOL.VERIFIED_SCORE_FLOOR,
+    min_attester_score:  PROTOCOL.MIN_ATTESTER_SCORE,
+    identity_max:        PROTOCOL.IDENTITY_MAX,
+    reputation_max:      PROTOCOL.REPUTATION_MAX,
+    max_score:           PROTOCOL.MAX_SCORE,
+    default_reputation:  PROTOCOL.DEFAULT_REPUTATION,
+    verify_retry_max:    PROTOCOL.VERIFY_RETRY_MAX,
+    verify_retry_base_ms: PROTOCOL.VERIFY_RETRY_BASE_MS,
+    verify_retry_max_ms: PROTOCOL.VERIFY_RETRY_MAX_MS,
+    att_max_age_seconds: PROTOCOL.ATT_MAX_AGE_SECONDS,
+    immutable:           true,  // todas estas constantes son inamovibles por diseño
   });
 }
 
@@ -394,6 +454,23 @@ async function handleVerify(req: IncomingMessage, res: ServerResponse, nodeKeypa
   // Incluir reputación actual del bot en la respuesta
   const reputation = getReputation(token.did);
 
+  // Guardar identityScore y hasDocumentVerified para enforcement del floor
+  if (!repStore[token.did]) {
+    repStore[token.did] = {
+      score:               reputation.score,
+      base:                10,
+      attestations:        [],
+      last_updated:        now,
+      identityScore:       token.identity_score ?? 0,
+      hasDocumentVerified: (token.credentials ?? []).includes("DocumentVerified"),
+    };
+  } else {
+    // Actualizar identity info si el token es más reciente
+    repStore[token.did].identityScore      = token.identity_score ?? 0;
+    repStore[token.did].hasDocumentVerified = (token.credentials ?? []).includes("DocumentVerified");
+  }
+  saveReputation();
+
   json(res, 200, {
     valid:        true,
     anti_sybil:   antiSybil,
@@ -431,6 +508,7 @@ export function startValidatorNode(port: number = PORT) {
     if (req.method === "OPTIONS") { res.writeHead(204); res.end(); return; }
 
     if (url === "/info"                 && req.method === "GET")  return handleInfo(res, nodeKeypair);
+    if (url === "/protocol"             && req.method === "GET")  return handleProtocol(res);
     if (url === "/verify"               && req.method === "POST") return handleVerify(req, res, nodeKeypair, ip);
     if (url === "/reputation/attest"    && req.method === "POST") return handleAttest(req, res, ip);
     if (url === "/peers/register"       && req.method === "POST") return handlePeerRegister(req, res);

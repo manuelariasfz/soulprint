@@ -287,3 +287,12 @@ export function calculateLevel(credentials: CredentialType[]): TrustLevel {
   if (has("EmailVerified"))                          return "EmailVerified";
   return "Unverified";
 }
+
+// ── Protocol Constants (re-export) ────────────────────────────────────────────
+export {
+  PROTOCOL,
+  isProtocolCompatible,
+  clampMinScore,
+  computeTotalScoreWithFloor,
+  withRetry,
+} from "./protocol-constants.js";
