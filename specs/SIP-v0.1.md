@@ -270,7 +270,7 @@ Threshold rationale: a completely different person scores < 0.15 with buffalo_sc
 ## Status
 
 
-## BFT P2P Consensus Extension (v0.3.2)
+## BFT P2P Consensus Extension (v0.3.3)
 
 Decentralized nullifier registration and attestation propagation without a blockchain.
 
@@ -329,7 +329,7 @@ Protocol hash verified in handshake — incompatible nodes rejected immediately.
 | ZK grounding | Each voter verifies the ZK proof locally (deterministic) |
 
 
-## Blockchain Backup Extension (v0.3.2)
+## Blockchain Backup Extension (v0.3.3)
 
 Async anchoring of P2P-committed data to EVM blockchain (Base Sepolia/mainnet).
 
@@ -371,7 +371,7 @@ SOULPRINT_NETWORK=base-sepolia
 
 ---
 
-**Draft — v0.3.2**. Phases 1–5 complete + anti-farming + credential validators + biometric PROTOCOL constants + BFT P2P consensus (sin blockchain).  
+**Draft — v0.3.3**. Phases 1–5 complete + anti-farming + credential validators + biometric PROTOCOL constants + BFT P2P consensus (sin blockchain).  
 Phase 6 (multi-country expansion) in progress.
 
 Feedback welcome: open an issue at https://github.com/manuelariasfz/soulprint/issues

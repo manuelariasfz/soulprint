@@ -199,6 +199,37 @@ Response:
   "lastAnchorTs":        1740000000000
 }</code></pre>
 
+
+    <h2>Governance</h2>
+    <p>On-chain governance for PROTOCOL_HASH upgrades via <code>GovernanceModule.sol</code>.</p>
+
+    <h3>GET /governance</h3>
+    <pre><code>{
+  "currentApprovedHash": "0xdfe1ccca...",
+  "blockchainConnected": true,
+  "activeProposals": 0,
+  "hashHistory": ["0xdfe1ccca..."],
+  "nodeCompatible": true
+}</code></pre>
+
+    <h3>GET /governance/proposals</h3>
+    <p>List all active or approved-pending-timelock proposals.</p>
+
+    <h3>GET /governance/proposal/:id</h3>
+    <p>Full proposal detail including <code>timelockRemainingSeconds</code>.</p>
+
+    <h3>POST /governance/propose</h3>
+    <pre><code>{ "did": "did:key:z6Mk...", "newHash": "0x...", "rationale": "..." }
+→ { "txHash": "0x...", "proposalId": 0 }</code></pre>
+
+    <h3>POST /governance/vote</h3>
+    <pre><code>{ "proposalId": 0, "did": "did:key:z6Mk...", "approve": true }
+→ { "txHash": "0x...", "proposalId": 0, "approve": true }</code></pre>
+
+    <h3>POST /governance/execute</h3>
+    <pre><code>{ "proposalId": 0 }
+→ { "txHash": "0x...", "proposalId": 0, "executed": true }</code></pre>
+
   </main>
 </div>
 </body>

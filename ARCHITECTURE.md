@@ -1,4 +1,4 @@
-# Soulprint — Architecture (v0.3.2)
+# Soulprint — Architecture (v0.3.3)
 
 > Cada diagrama C4 tiene **dos formatos**:
 > - 🖼️ **Mermaid** — se renderiza visualmente en GitHub (para humanos)
@@ -810,6 +810,58 @@ Issuer firma ATTEST{issuerDid, targetDid, +1/-1, context, ts, sig}
     └── estado eventualmente consistente en toda la red
 ```
 
+
+
+### GovernanceModule — Governance on-chain (v0.3.3)
+
+```
+Problema: ¿Quién puede cambiar el PROTOCOL_HASH?
+Solución: nadie solo — requiere supermayoría on-chain.
+
+Flujo:
+  1. Validador verificado → proposeUpgrade(did, newHash, rationale)
+  2. Otros validadores → voteOnProposal(id, did, approve)
+  3. votesFor ≥ 70% de nodos activos → estado: APPROVED
+  4. Timelock 48h → cualquier acción de veto por humanos
+  5. Cualquiera → executeProposal(id) → currentApprovedHash actualizado
+
+Veto de emergencia:
+  Si 25% vota en contra DURANTE el timelock → VETOED
+
+Garantías:
+  ✅ Solo identidades biométricas verificadas pueden votar
+  ✅ 1 DID = 1 voto (anti-sybil by design)
+  ✅ Quórum mínimo: 3 votos
+  ✅ 48h timelock — ventana para reacción humana
+  ✅ Historial de hashes auditables on-chain (hashHistory[])
+```
+
+**Contratos:**
+| Contrato | Dirección (Base Sepolia) |
+|---|---|
+| GovernanceModule | `0xE74Cd1Aa66541dF76e5a82a05F11f80B31FCe217` |
+
+**SDK methods:**
+```typescript
+await client.getCurrentApprovedHash()          // hash activo
+await client.isHashApproved(hash)              // ¿es compatible?
+await client.proposeUpgrade({ did, newHash, rationale })
+await client.voteOnProposal({ proposalId, did, approve })
+await client.executeProposal(proposalId)
+await client.getActiveProposals()
+await client.getHashHistory()                  // auditoría completa
+await client.getTimelockRemaining(proposalId)
+```
+
+**HTTP endpoints (validator node):**
+```
+GET  /governance                    estado + propuestas activas
+GET  /governance/proposals          lista propuestas activas
+GET  /governance/proposal/:id       detalle + tiempo de timelock
+POST /governance/propose            proponer upgrade
+POST /governance/vote               votar
+POST /governance/execute            ejecutar post-timelock
+```
 
 ### Blockchain Backup — P2P primario + async anchor
 

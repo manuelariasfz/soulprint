@@ -19,6 +19,10 @@ import { selectGossipPeers, routingStats } from "./crypto/peer-router.js";
 import { NullifierConsensus, AttestationConsensus, StateSyncManager } from "./consensus/index.js";
 import { BlockchainAnchor } from "./blockchain/blockchain-anchor.js";
 import {
+  SoulprintBlockchainClient,
+  loadBlockchainConfig,
+} from "./blockchain/blockchain-client.js";
+import {
   publishAttestationP2P,
   onAttestationReceived,
   getP2PStats,
@@ -697,8 +701,15 @@ export function startValidatorNode(port: number = PORT) {
     storePath: join(NODE_DIR, "blockchain-queue"),
   });
 
+  // Cliente blockchain directo (para governance)
+  const bcConfig = loadBlockchainConfig();
+  const client: SoulprintBlockchainClient | null = bcConfig
+    ? new SoulprintBlockchainClient(bcConfig)
+    : null;
+
   // Conectar en background (no bloquea el arranque del nodo)
   anchor.connect().catch(() => {});
+  if (client) client.connect().catch(() => {});
 
   // Escuchar eventos del consenso y anclar async
   nullifierConsensus.on("committed", (entry: import("./consensus/index.js").CommittedNullifier) => {
@@ -821,6 +832,86 @@ export function startValidatorNode(port: number = PORT) {
       } catch {
         return json(res, 400, { error: "Invalid consensus message" });
       }
+    }
+
+    // ── Governance endpoints ──────────────────────────────────────────────────
+
+    // GET /governance — estado del hash aprobado + propuestas activas
+    if (cleanUrl === "/governance" && req.method === "GET") {
+      const [currentHash, active, history] = await Promise.all([
+        client?.getCurrentApprovedHash()  ?? null,
+        client?.getActiveProposals()       ?? [],
+        client?.getHashHistory()           ?? [],
+      ]);
+      return json(res, 200, {
+        currentApprovedHash: currentHash ?? PROTOCOL_HASH,
+        blockchainConnected: !!client?.isConnected,
+        activeProposals:     active.length,
+        hashHistory:         history,
+        nodeCompatible:      !currentHash || currentHash.toLowerCase() === ("0x" + PROTOCOL_HASH).toLowerCase(),
+      });
+    }
+
+    // GET /governance/proposals — lista de propuestas activas
+    if (cleanUrl === "/governance/proposals" && req.method === "GET") {
+      if (!client?.isConnected) return json(res, 503, { error: "Blockchain not connected" });
+      const proposals = await client.getActiveProposals();
+      return json(res, 200, { proposals, total: proposals.length });
+    }
+
+    // GET /governance/proposal/:id — detalle de una propuesta
+    if (cleanUrl.match(/^\/governance\/proposal\/\d+$/) && req.method === "GET") {
+      if (!client?.isConnected) return json(res, 503, { error: "Blockchain not connected" });
+      const proposalId = parseInt(cleanUrl.split("/").pop()!);
+      const proposal   = await client.getProposal(proposalId);
+      if (!proposal) return json(res, 404, { error: "Proposal not found" });
+      const remaining  = await client.getTimelockRemaining(proposalId);
+      return json(res, 200, { ...proposal, timelockRemainingSeconds: remaining });
+    }
+
+    // POST /governance/propose — proponer upgrade del PROTOCOL_HASH
+    // Body: { did, newHash, rationale }
+    if (cleanUrl === "/governance/propose" && req.method === "POST") {
+      if (!client?.isConnected) return json(res, 503, { error: "Blockchain not connected" });
+      const body = await readBody(req);
+      if (!body?.did || !body?.newHash || !body?.rationale) {
+        return json(res, 400, { error: "Required: did, newHash, rationale" });
+      }
+      const result = await client.proposeUpgrade({
+        did:       body.did,
+        newHash:   body.newHash,
+        rationale: body.rationale,
+      });
+      if (!result) return json(res, 500, { error: "Proposal failed — check validator logs" });
+      return json(res, 201, result);
+    }
+
+    // POST /governance/vote — votar en una propuesta
+    // Body: { proposalId, did, approve }
+    if (cleanUrl === "/governance/vote" && req.method === "POST") {
+      if (!client?.isConnected) return json(res, 503, { error: "Blockchain not connected" });
+      const body = await readBody(req);
+      if (body?.proposalId === undefined || !body?.did || body?.approve === undefined) {
+        return json(res, 400, { error: "Required: proposalId, did, approve" });
+      }
+      const txHash = await client.voteOnProposal({
+        proposalId: Number(body.proposalId),
+        did:        body.did,
+        approve:    Boolean(body.approve),
+      });
+      if (!txHash) return json(res, 500, { error: "Vote failed — check validator logs" });
+      return json(res, 200, { txHash, proposalId: body.proposalId, approve: body.approve });
+    }
+
+    // POST /governance/execute — ejecutar propuesta post-timelock
+    // Body: { proposalId }
+    if (cleanUrl === "/governance/execute" && req.method === "POST") {
+      if (!client?.isConnected) return json(res, 503, { error: "Blockchain not connected" });
+      const body = await readBody(req);
+      if (body?.proposalId === undefined) return json(res, 400, { error: "Required: proposalId" });
+      const txHash = await client.executeProposal(Number(body.proposalId));
+      if (!txHash) return json(res, 500, { error: "Execute failed — timelock not expired or proposal not approved" });
+      return json(res, 200, { txHash, proposalId: body.proposalId, executed: true });
     }
 
     json(res, 404, { error: "Not found" });

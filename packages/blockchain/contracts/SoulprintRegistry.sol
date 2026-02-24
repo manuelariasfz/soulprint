@@ -189,4 +189,20 @@ contract SoulprintRegistry is ProtocolConstants {
         if (faceVerified)     score += 25;
         return score > IDENTITY_MAX ? IDENTITY_MAX : score;
     }
+    /**
+     * @notice Retorna campos de una identidad por nullifier (para governance).
+     */
+    function getIdentityByNullifier(bytes32 nullifier)
+        external view
+        returns (
+            bytes32 null_, string memory did_,
+            uint8 score_, uint64 regAt_,
+            bool docV_, bool faceV_, bool active_
+        )
+    {
+        Identity memory id = identities[nullifier];
+        return (id.nullifier, id.did, id.identityScore, id.registeredAt,
+                id.documentVerified, id.faceVerified, id.active);
+    }
+
 }
