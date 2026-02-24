@@ -80,11 +80,14 @@ export function getCodeIntegrity(): CodeIntegrityInfo {
  * @param approvedHashes  Lista de hashes aprobados por governance
  * @returns true si el hash actual está en la lista de aprobados
  */
-export function isCodeApproved(approvedHashes: string[]): boolean {
+export function isCodeApproved(approvedHashes: (string | null | undefined)[]): boolean {
   const info = getCodeIntegrity();
-  if (!info.available) return false;  // si no hay hash, mejor denegar
+  if (!info.available) return false;
   const h = info.codeHash.toLowerCase().replace("0x", "");
-  return approvedHashes.some(a => a.toLowerCase().replace("0x", "") === h);
+  return approvedHashes.some(a => {
+    if (a == null || typeof a !== "string") return false;
+    return a.toLowerCase().replace("0x", "") === h;
+  });
 }
 
 /**
