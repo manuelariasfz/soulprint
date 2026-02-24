@@ -39,6 +39,9 @@ async function main() {
   const constantsAddr = await constants.getAddress();
   console.log(`   ✅ ProtocolConstants: ${constantsAddr}`);
 
+  // Esperar que el nodo RPC indexe el contrato
+  await new Promise(r => setTimeout(r, 3000));
+
   // Verificar que el hash on-chain coincide con el de TypeScript
   const onChainHash = await constants.PROTOCOL_HASH();
   const expectedHash = "0xdfe1ccca1270ec86f93308dc4b981bab1d6bd74bdcc334059f4380b407ca07ca";
@@ -55,6 +58,7 @@ async function main() {
     await mockVerifier.waitForDeployment();
     verifierAddr = await mockVerifier.getAddress();
     console.log(`   ✅ MockGroth16Verifier: ${verifierAddr}`);
+    await new Promise(r => setTimeout(r, 3000));
   } else {
     console.log("\n🔒 Deploying Groth16Verifier (mainnet)...");
     const Verifier = await ethers.getContractFactory("Groth16Verifier");
@@ -71,6 +75,7 @@ async function main() {
   await registry.waitForDeployment();
   const registryAddr = await registry.getAddress();
   console.log(`   ✅ SoulprintRegistry: ${registryAddr}`);
+  await new Promise(r => setTimeout(r, 3000));
 
   // ── 4. AttestationLedger ──────────────────────────────────────────────────
   console.log("\n📊 Deploying AttestationLedger...");
@@ -79,6 +84,7 @@ async function main() {
   await ledger.waitForDeployment();
   const ledgerAddr = await ledger.getAddress();
   console.log(`   ✅ AttestationLedger: ${ledgerAddr}`);
+  await new Promise(r => setTimeout(r, 3000));
 
   // ── 5. ValidatorRegistry ──────────────────────────────────────────────────
   console.log("\n🌐 Deploying ValidatorRegistry...");
