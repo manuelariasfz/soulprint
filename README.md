@@ -7,7 +7,7 @@ Soulprint lets any AI bot prove there's a verified human behind it — without r
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [[![npm soulprint](https://img.shields.io/npm/v/soulprint?label=soulprint&color=blue)](https://npmjs.com/package/soulprint)
 [![npm soulprint-mcp](https://img.shields.io/npm/v/soulprint-mcp?label=soulprint-mcp&color=purple)](https://npmjs.com/package/soulprint-mcp)
-![Phase](https://img.shields.io/badge/MVP-phases%201--3%20complete-green)]()
+![Phase](https://img.shields.io/badge/v0.1.3-phases%201--4%20complete-brightgreen)]()
 [![Built with](https://img.shields.io/badge/built%20with-Circom%20%2B%20snarkjs%20%2B%20InsightFace-purple)]()
 
 ---
@@ -336,6 +336,78 @@ pnpm --filter soulprint-zkp build:circuits
 
 ```bash
 pip3 install insightface opencv-python-headless onnxruntime
+```
+
+---
+
+## Trust Score — 0 to 100
+
+```
+Total Score (0-100) = Identity (0-80) + Bot Reputation (0-20)
+```
+
+**Identity credentials (max 80 pts):**
+
+| Credential | Points | How |
+|---|---|---|
+| EmailVerified | +8 | Email confirmation |
+| PhoneVerified | +12 | SMS OTP |
+| GitHubLinked | +16 | OAuth |
+| DocumentVerified | +20 | OCR + MRZ (ICAO 9303) |
+| FaceMatch | +16 | InsightFace biometric |
+| BiometricBound | +8 | Device binding |
+
+**Access levels:**
+
+| Score | Level | Access |
+|---|---|---|
+| 0–17 | Anonymous | Basic tools |
+| 18–59 | Partial KYC | Standard features |
+| 60–94 | KYCFull | Advanced features |
+| **95–100** | **KYCFull + reputation** | **Premium endpoints** |
+
+---
+
+## Bot Reputation (v0.1.3)
+
+The reputation layer (0–20 pts) builds over time from behavioral **attestations** issued by verified services.
+
+```
+Reputation starts at: 10 (neutral)
+Verified service issues +1  →  goes up  (max 20)
+Verified service issues -1  →  goes down (min 0)
+```
+
+**Attestation format (Ed25519 signed):**
+
+```typescript
+interface BotAttestation {
+  issuer_did: string;  // service DID (requires score >= 60 to issue)
+  target_did: string;  // bot being rated
+  value:      1 | -1;
+  context:    string;  // "spam-detected", "normal-usage", "payment-completed"
+  timestamp:  number;
+  sig:        string;  // Ed25519 — bound to issuer_did
+}
+```
+
+**Only services with score ≥ 60 can issue attestations.** This prevents low-quality services from gaming the network.
+
+Attestations propagate **P2P across all validator nodes** via fire-and-forget gossip (anti-replay included).
+
+---
+
+## Live Ecosystem — mcp-colombia-hub
+
+[mcp-colombia-hub](https://github.com/manuelariasfz/mcp-colombia) is the **first verified service** in the Soulprint ecosystem:
+
+- **Service score:** 80 (DocumentVerified + FaceMatch + GitHubLinked + BiometricBound)
+- **Auto-issues -1** when a bot spams (>5 req/60s)
+- **Auto-issues +1** when a bot completes 3+ tools normally
+- **Premium endpoint `trabajo_aplicar`** requires score ≥ 95
+
+```bash
+npx -y mcp-colombia-hub
 ```
 
 ---
