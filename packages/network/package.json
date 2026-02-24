@@ -1,6 +1,6 @@
 {
   "name": "soulprint-network",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Soulprint validator node — HTTP server that verifies ZK proofs, co-signs SPTs, anti-Sybil registry",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
