@@ -8,7 +8,9 @@
 
 const {
   generateKeypair, keypairFromPrivateKey, createToken, decodeToken,
-  sign, verify, calculateScore, calculateLevel, deriveNullifier,
+  sign, verify, calculateScore, calculateLevel, calculateTotalScore,
+  deriveNullifier, defaultReputation,
+  createAttestation, verifyAttestation, computeReputation,
 } = require("../packages/core/dist/index.js");
 const { verifySPT } = require("../packages/express/dist/verify.js");
 const { verifySPT: mcpVerify } = require("../packages/mcp/dist/index.js");
@@ -100,18 +102,18 @@ describe("Core — Trust Score & Level", () => {
     assertEq(calculateLevel([]), "Unverified");
   });
 
-  test("Email: score=10, level=EmailVerified", () => {
-    assertEq(calculateScore(["EmailVerified"]), 10);
+  test("Email: score=8, level=EmailVerified (identidad escalada a 80 max)", () => {
+    assertEq(calculateScore(["EmailVerified"]), 8);
     assertEq(calculateLevel(["EmailVerified"]), "EmailVerified");
   });
 
-  test("Phone: score=15, level=PhoneVerified", () => {
-    assertEq(calculateScore(["PhoneVerified"]), 15);
+  test("Phone: score=12, level=PhoneVerified", () => {
+    assertEq(calculateScore(["PhoneVerified"]), 12);
     assertEq(calculateLevel(["PhoneVerified"]), "PhoneVerified");
   });
 
-  test("Doc+Face: score=45, level=KYCFull", () => {
-    assertEq(calculateScore(["DocumentVerified", "FaceMatch"]), 45);
+  test("Doc+Face: score=36 identidad, level=KYCFull", () => {
+    assertEq(calculateScore(["DocumentVerified", "FaceMatch"]), 36);
     assertEq(calculateLevel(["DocumentVerified", "FaceMatch"]), "KYCFull");
   });
 
@@ -119,9 +121,20 @@ describe("Core — Trust Score & Level", () => {
     assertEq(calculateLevel(["DocumentVerified"]), "KYCLite");
   });
 
-  test("Score acumula correctamente", () => {
-    const score = calculateScore(["DocumentVerified", "FaceMatch", "BiometricBound", "GitHubLinked"]);
-    assertEq(score, 25 + 20 + 10 + 20, `Score esperado 75, got ${score}`);
+  test("Score identidad máximo = 80", () => {
+    const score = calculateScore(["DocumentVerified", "FaceMatch", "BiometricBound", "GitHubLinked", "EmailVerified", "PhoneVerified"]);
+    assertEq(score, 80, `Score identidad máx esperado 80, got ${score}`);
+  });
+
+  test("Score total (identidad+reputación) máximo = 100", () => {
+    const allCreds = ["DocumentVerified", "FaceMatch", "BiometricBound", "GitHubLinked", "EmailVerified", "PhoneVerified"];
+    const maxRep   = { score: 20, attestations: 10, last_updated: Date.now() };
+    assertEq(calculateTotalScore(allCreds, maxRep), 100, "Identidad 80 + Reputación 20 = 100");
+  });
+
+  test("Bot sin identidad + buena reputación = 20 pts", () => {
+    const botRep = { score: 20, attestations: 50, last_updated: Date.now() };
+    assertEq(calculateTotalScore([], botRep), 20, "Sin identidad, solo reputación máxima = 20");
   });
 
   test("Credencial desconocida no suma (no falla)", () => {
@@ -150,7 +163,9 @@ describe("Core — SPT Token", () => {
     const d = decodeToken(validToken);
     assertNotNull(d, "Token debe decodificarse");
     assertEq(d.did, kp.did);
-    assertEq(d.score, 45);
+    assertEq(d.identity_score, 36, "identity_score Doc+Face = 36");
+    assertEq(d.bot_rep.score,  10, "bot_rep.score default = 10");
+    assertEq(d.score,          46, "total score = 36 + 10 = 46");
     assertEq(d.level, "KYCFull");
     assertEq(d.country, "CO");
     assertEq(d.nullifier, nullifier);
@@ -289,7 +304,7 @@ describe("Pen Test — Middleware Security", () => {
 
   test("minScore=100 rechaza todo (máximo teórico > 100 con combinaciones)", () => {
     const r = verifySPT(token, { minScore: 100 });
-    assert(!r.allowed, "minScore=100 debe rechazar un token con score 45");
+    assert(!r.allowed, "minScore=100 debe rechazar un token con score < 100");
   });
 
   test("minScore negativo acepta (no crash)", () => {
@@ -549,7 +564,7 @@ describe("E2E — Flujo completo (mocked)", async () => {
     mw(req, res, () => { nextCalled = true; });
     assert(nextCalled, "Middleware debe llamar next() con token válido");
     assert(req.soulprint !== undefined, "req.soulprint debe estar poblado");
-    assertEq(req.soulprint.score, 45, "Score correcto");
+    assertEq(req.soulprint.score, 46, "Score correcto: identidad 36 + reputación default 10 = 46");
     assertEq(req.soulprint.nullifier, nullifier, "Nullifier correcto");
   });
 
@@ -778,6 +793,129 @@ describe("Multi-Country Registry", () => {
     assert(pe.validate("12345678").valid,   "8 dígitos debe ser válido");
     assert(!pe.validate("1234567").valid,   "7 dígitos debe fallar");
     assert(!pe.validate("123456789").valid, "9 dígitos debe fallar");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BOT REPUTATION SYSTEM
+// ─────────────────────────────────────────────────────────────────────────────
+describe("Bot Reputation — Attestations & Score", () => {
+
+  test("defaultReputation() = score 10 (neutral)", () => {
+    const rep = defaultReputation();
+    assertEq(rep.score, 10, "Score neutral debe ser 10");
+    assertEq(rep.attestations, 0);
+  });
+
+  test("createAttestation() produce attestation firmada correctamente", () => {
+    const svc = generateKeypair();
+    const bot = generateKeypair();
+    const att = createAttestation(svc, bot.did, 1, "payment-completed");
+
+    assertEq(att.issuer_did, svc.did);
+    assertEq(att.target_did, bot.did);
+    assertEq(att.value, 1);
+    assertEq(att.context, "payment-completed");
+    assert(typeof att.sig === "string" && att.sig.length > 0, "Debe tener firma");
+  });
+
+  test("verifyAttestation() acepta attestation válida", () => {
+    const svc = generateKeypair();
+    const bot = generateKeypair();
+    const att = createAttestation(svc, bot.did, 1, "test");
+    assert(verifyAttestation(att), "Attestation válida debe verificar");
+  });
+
+  test("verifyAttestation() rechaza attestation con firma alterada", () => {
+    const svc = generateKeypair();
+    const bot = generateKeypair();
+    const att = createAttestation(svc, bot.did, 1, "test");
+    const tampered = { ...att, value: -1 };  // cambiar value sin re-firmar
+    assert(!verifyAttestation(tampered), "Attestation alterada debe rechazarse");
+  });
+
+  test("verifyAttestation() rechaza si issuer_did no coincide con firma", () => {
+    const svc1 = generateKeypair();
+    const svc2 = generateKeypair();
+    const bot  = generateKeypair();
+    const att  = createAttestation(svc1, bot.did, 1, "test");
+    const hijacked = { ...att, issuer_did: svc2.did };  // suplantar emisor
+    assert(!verifyAttestation(hijacked), "Suplantación de emisor debe rechazarse");
+  });
+
+  test("computeReputation() — score sube con +1s", () => {
+    const svc = generateKeypair();
+    const bot = generateKeypair();
+    const atts = [
+      createAttestation(svc, bot.did, 1, "delivery-ok"),
+      createAttestation(svc, bot.did, 1, "payment-ok"),
+      createAttestation(svc, bot.did, 1, "helpful"),
+    ];
+    const rep = computeReputation(atts, 10);
+    assertEq(rep.score, 13, "10 base + 3 positivas = 13");
+    assertEq(rep.attestations, 3);
+  });
+
+  test("computeReputation() — score baja con -1s", () => {
+    const svc = generateKeypair();
+    const bot = generateKeypair();
+    const atts = [
+      createAttestation(svc, bot.did, -1, "spam"),
+      createAttestation(svc, bot.did, -1, "fraud-attempt"),
+    ];
+    const rep = computeReputation(atts, 10);
+    assertEq(rep.score, 8, "10 base - 2 negativas = 8");
+  });
+
+  test("computeReputation() — score se clampea en 0", () => {
+    const svc  = generateKeypair();
+    const bot  = generateKeypair();
+    const atts = Array.from({ length: 15 }, (_, i) =>
+      createAttestation(svc, bot.did, -1, `violation-${i}`)
+    );
+    const rep = computeReputation(atts, 10);
+    assertEq(rep.score, 0, "Score no puede bajar de 0");
+  });
+
+  test("computeReputation() — score se clampea en 20", () => {
+    const svc  = generateKeypair();
+    const bot  = generateKeypair();
+    const atts = Array.from({ length: 15 }, (_, i) =>
+      createAttestation(svc, bot.did, 1, `great-${i}`)
+    );
+    const rep = computeReputation(atts, 10);
+    assertEq(rep.score, 20, "Score no puede superar 20");
+  });
+
+  test("computeReputation() — attestations con firma inválida se ignoran", () => {
+    const svc = generateKeypair();
+    const bot = generateKeypair();
+    const validAtt   = createAttestation(svc, bot.did, 1, "valid");
+    const invalidAtt = { ...createAttestation(svc, bot.did, 1, "invalid"), value: -1 };
+    const rep = computeReputation([validAtt, invalidAtt], 10);
+    assertEq(rep.score, 11, "Solo la attestation válida suma (+1), la alterada se ignora");
+    assertEq(rep.attestations, 1, "Solo 1 attestation válida contada");
+  });
+
+  test("Token incluye bot_rep y score total = identidad + reputación", () => {
+    const kp     = generateKeypair();
+    const botRep = { score: 15, attestations: 5, last_updated: Math.floor(Date.now()/1000) };
+    const token  = createToken(kp, "0xnull", ["DocumentVerified", "FaceMatch"], { bot_rep: botRep });
+    const d      = decodeToken(token);
+    assertEq(d.identity_score, 36, "identity_score = 36");
+    assertEq(d.bot_rep.score,  15, "bot_rep.score = 15");
+    assertEq(d.score,          51, "total = 36 + 15 = 51");
+  });
+
+  test("Score total clampeado a 100", () => {
+    const kp  = generateKeypair();
+    const rep = { score: 20, attestations: 20, last_updated: Date.now() };
+    const tok = createToken(kp, "0xnull",
+      ["DocumentVerified","FaceMatch","BiometricBound","GitHubLinked","EmailVerified","PhoneVerified"],
+      { bot_rep: rep }
+    );
+    const d = decodeToken(tok);
+    assertEq(d.score, 100, "Identidad 80 + Reputación 20 = 100 exacto");
   });
 });
 

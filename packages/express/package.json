@@ -1,6 +1,6 @@
 {
   "name": "soulprint-express",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Soulprint Express/Fastify middleware \u2014 app.use(soulprint({ minScore: 40 }))",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
