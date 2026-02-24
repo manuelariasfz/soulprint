@@ -1,4 +1,4 @@
-# Soulprint — Architecture (v0.2.0)
+# Soulprint — Architecture (v0.3.1)
 
 > Cada diagrama C4 tiene **dos formatos**:
 > - 🖼️ **Mermaid** — se renderiza visualmente en GitHub (para humanos)
@@ -20,10 +20,11 @@
 8. [Token Format — SPT](#token-format--spt)
 9. [Bot Reputation Layer](#bot-reputation-layer)
 10. [P2P Gossip Protocol](#p2p-gossip-protocol)
-11. [Multi-Country Registry](#multi-country-registry)
-12. [Security Threat Matrix](#security-threat-matrix)
-13. [Data Flow — Full Journey](#data-flow--full-journey)
-14. [Package Dependency Graph](#package-dependency-graph)
+11. [BFT P2P Consensus (v0.3.1)](#bft-p2p-consensus-v031)
+12. [Multi-Country Registry](#multi-country-registry)
+13. [Security Threat Matrix](#security-threat-matrix)
+14. [Data Flow — Full Journey](#data-flow--full-journey)
+15. [Package Dependency Graph](#package-dependency-graph)
 
 ---
 
@@ -676,7 +677,8 @@ Multiaddr: /ip4/x.x.x.x/tcp/6888/p2p/12D3KooW...
 | Topic | Uso |
 |---|---|
 | `soulprint:attestations:v1` | Broadcast de BotAttestations |
-| `soulprint:nullifiers:v1` | Reservado — anti-Sybil futuro |
+| `soulprint:nullifiers:v1` | Mensajes de consenso: PROPOSE / VOTE / COMMIT |
+| `soulprint:consensus:v1` | Attestations de reputación del consenso (ATTEST msg) |
 
 ### Anti-loop y anti-replay
 
@@ -695,6 +697,146 @@ libp2p@2.10.0
 ├── @libp2p/mdns@11.0.47 · @libp2p/bootstrap@11.0.47
 └── @libp2p/identify@3.0.39 · @libp2p/ping@2.0.37
 ```
+
+---
+
+
+---
+
+## BFT P2P Consensus (v0.3.1)
+
+> Consenso descentralizado sin blockchain, sin gas fees, sin dependencias externas.
+> Implementado en `packages/network/src/consensus/` — TypeScript puro sobre el P2P existente.
+
+### Por qué sin blockchain
+
+```
+Blockchain tradicional:
+  → Gas fees por transacción (~$0.001-$0.01)
+  → Dependencia de red externa (Base, Ethereum)
+  → Latencia de bloque (2-12 segundos)
+  → Infraestructura de wallets/llaves EVM
+
+Soulprint BFT P2P:
+  → Costo $0 siempre
+  → Red autónoma (los mismos nodos validadores)
+  → Latencia < 1 segundo en LAN, 2-5s en WAN
+  → Ed25519 nativo (ya existente en el protocolo)
+```
+
+### Protocolo NullifierConsensus — PROPOSE → VOTE → COMMIT
+
+```mermaid
+sequenceDiagram
+    participant C  as Cliente
+    participant P  as Proposer (Nodo A)
+    participant V1 as Nodo B
+    participant V2 as Nodo C
+    participant V3 as Nodo D
+
+    C  ->> P:  POST /verify (nullifier + ZK proof)
+    P  ->> P:  verifica ZK proof localmente
+    P  ->> V1: PROPOSE {nullifier, proofHash, sig}
+    P  ->> V2: PROPOSE {nullifier, proofHash, sig}
+    P  ->> V3: PROPOSE {nullifier, proofHash, sig}
+    V1 ->> V1: verifica ZK proof localmente
+    V2 ->> V2: verifica ZK proof localmente
+    V3 ->> V3: verifica ZK proof localmente
+    V1 ->> P:  VOTE {accept, sig}
+    V2 ->> P:  VOTE {accept, sig}
+    V3 ->> P:  VOTE {accept, sig}
+    Note over P: N/2+1 votos → COMMIT
+    P  ->> V1: COMMIT {nullifier, did, votes[]}
+    P  ->> V2: COMMIT {nullifier, did, votes[]}
+    P  ->> V3: COMMIT {nullifier, did, votes[]}
+    P  ->> C:  200 OK — nullifier registrado
+```
+
+> **📝 ASCII — para LLMs**
+
+```
+Cliente → POST /verify (nullifier + ZK proof)
+    │
+    ▼
+Proposer (Nodo A)
+    ├── verifica ZK proof localmente
+    ├── PROPOSE{nullifier, proofHash, sig} ──▶ Nodo B
+    │                                      ──▶ Nodo C
+    │                                      ──▶ Nodo D
+    │
+    │   Nodo B: verifica ZK ──▶ VOTE{accept, sig} ──▶ Proposer
+    │   Nodo C: verifica ZK ──▶ VOTE{accept, sig} ──▶ Proposer
+    │   Nodo D: verifica ZK ──▶ VOTE{accept, sig} ──▶ Proposer
+    │
+    ├── N/2+1 votos → COMMIT{nullifier, did, votes[]}
+    │   COMMIT ──▶ Nodo B / C / D (todos guardan)
+    │
+    └── 200 OK → Cliente
+```
+
+### Modos de operación
+
+| Condición | Modo | Comportamiento |
+|---|---|---|
+| `connectedPeers === 0` | **Single** | Commit inmediato local — sin esperar |
+| `connectedPeers < minPeers` | **Single** | Commit local (red muy pequeña) |
+| `connectedPeers >= minPeers` | **Consenso** | PROPOSE → VOTE → COMMIT |
+| Timeout 10s sin quorum | **Error** | Rechaza — cliente debe reintentar |
+
+### Formato de mensajes (cifrados con AES-256-GCM)
+
+```typescript
+// Todos los mensajes llevan PROTOCOL_HASH — nodo diferente → rechazado
+ProposeMsg { type: "PROPOSE", nullifier, did, proofHash, proposerDid, ts, protocolHash, sig }
+VoteMsg    { type: "VOTE",    nullifier, vote: "accept"|"reject", voterDid, ts, protocolHash, sig }
+CommitMsg  { type: "COMMIT",  nullifier, did, votes[], commitDid, ts, protocolHash, sig }
+```
+
+### AttestationConsensus — Attestations P2P sin multi-ronda
+
+```
+Diseño: attestations usan firma Ed25519 (no-repudio) → no necesitan quorum
+
+Issuer firma ATTEST{issuerDid, targetDid, +1/-1, context, ts, sig}
+    │
+    ├── broadcast a red (encryptGossip AES-256-GCM)
+    │
+    ├── cada nodo receptor:
+    │   ├── verifica protocolHash
+    │   ├── verifica cooldown 24h (anti-farming)
+    │   ├── anti-replay: msgHash en Set<string>
+    │   └── applyAttest() → actualiza reputación + persiste
+    │
+    └── estado eventualmente consistente en toda la red
+```
+
+### StateSyncManager — Sync al arrancar
+
+```
+Nodo nuevo arranca
+    │
+    ├── GET {peer}/consensus/state-info  ──▶ { nullifierCount, protocolHash }
+    │   └── si protocolHash ≠ PROTOCOL_HASH → skip peer (incompatible)
+    │
+    ├── GET {peer}/consensus/state?page=0&since=0
+    │   ├── recibe: { nullifiers[], attestations{}, reps{} }
+    │   └── importState() → merge (idempotente, sin duplicados)
+    │
+    └── (continuar con pages hasta totalPages)
+    
+Resultado: nodo listo con estado completo en < 5s
+```
+
+### Garantías de seguridad
+
+| Propiedad | Mecanismo |
+|---|---|
+| **Anti-sybil** | Nullifier = Poseidon(biometría) — único por persona |
+| **No-repudio** | Ed25519 en cada mensaje — no se puede negar la firma |
+| **Anti-replay** | `seen: Set<msgHash>` — cada msg procesado exactamente 1 vez |
+| **Aislamiento de red** | PROTOCOL_HASH en cada msg — nodo modificado es ignorado |
+| **Anti-farming** | Cooldown 24h por par issuer:target + cap 7/semana |
+| **Fault tolerance** | N/2+1 quorum — tolera hasta N/2 nodos maliciosos |
 
 ---
 
@@ -733,6 +875,10 @@ packages/verify-local/src/document/
 | **Token replay** | Usar token de otro usuario | Expira en 24h + context_tag por servicio |
 | **Sybil via nullifier** | Múltiples DIDs, mismo nullifier | Nodo: nullifier → exactamente un DID |
 | **Robo de clave** | Leer `~/.soulprint/keypair.json` | Clave privada nunca se transmite; mode 0600 |
+| **Consensus hijack** | Nodo malicioso vota ACCEPT a todo | Quorum N/2+1; ZK verificado localmente por cada voter |
+| **Gossip poisoning** | Mensajes falsos en red | AES-256-GCM + PROTOCOL_HASH — nodo diferente no puede descifrar |
+| **Nullifier replay** | Reusar COMMIT antiguo | `nullifiers.has(x)` — commit idempotente, 2da aplicación no-op |
+| **Farming P2P** | Mismo issuer atestigua en bucle | Cooldown 24h on-node + cap 7/semana en AttestationConsensus |
 
 ---
 

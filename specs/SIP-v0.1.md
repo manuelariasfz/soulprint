@@ -269,7 +269,69 @@ Threshold rationale: a completely different person scores < 0.15 with buffalo_sc
 
 ## Status
 
-**Draft — v0.3.0**. Phases 1–5 complete + anti-farming + credential validators + biometric PROTOCOL constants.  
+
+## BFT P2P Consensus Extension (v0.3.1)
+
+Decentralized nullifier registration and attestation propagation without a blockchain.
+
+### NullifierConsensus Protocol
+
+Three-phase protocol over encrypted GossipSub:
+
+```
+Phase 1 — PROPOSE:
+  { type, nullifier, did, proofHash, proposerDid, ts, protocolHash, sig }
+
+Phase 2 — VOTE (from each receiving node):
+  { type, nullifier, vote: "accept"|"reject", voterDid, ts, protocolHash, sig }
+
+Phase 3 — COMMIT (when N/2+1 accepts received):
+  { type, nullifier, did, votes[], commitDid, ts, protocolHash, sig }
+```
+
+**Quorum:** `floor(connectedPeers / 2) + 1`  
+**Single mode:** triggered when `connectedPeers === 0` — immediate local commit  
+**Timeout:** 10 seconds per round; client retries on timeout
+
+### AttestationConsensus Protocol
+
+No multi-round needed — Ed25519 signature provides non-repudiation:
+
+```
+ATTEST { type, issuerDid, targetDid, value: +1|-1, context, ts, protocolHash, sig }
+```
+
+Anti-farming enforced per-node:
+- Cooldown: 24h per `issuerDid:targetDid` pair
+- Cap: ≥7 attestations/week from same issuer → converts +1 to −1
+- Anti-replay: `Set<msgHash>` — each message applied exactly once
+
+### State Sync Protocol
+
+New nodes sync state on startup:
+
+```
+GET /consensus/state-info  → { nullifierCount, attestationCount, protocolHash }
+GET /consensus/state?page=N&since=TS  → { nullifiers[], attestations{}, reps{}, totalPages }
+POST /consensus/message    → receive PROPOSE | VOTE | COMMIT | ATTEST (encrypted)
+```
+
+Protocol hash verified in handshake — incompatible nodes rejected immediately.
+
+### Security Properties
+
+| Property | Mechanism |
+|---|---|
+| Fault tolerance | Tolerates up to N/2 malicious nodes |
+| Non-repudiation | Ed25519 signature on every consensus message |
+| Network isolation | PROTOCOL_HASH checked on every message |
+| Anti-replay | `seen: Set<msgHash>` — exactly-once semantics |
+| ZK grounding | Each voter verifies the ZK proof locally (deterministic) |
+
+
+---
+
+**Draft — v0.3.1**. Phases 1–5 complete + anti-farming + credential validators + biometric PROTOCOL constants + BFT P2P consensus (sin blockchain).  
 Phase 6 (multi-country expansion) in progress.
 
 Feedback welcome: open an issue at https://github.com/manuelariasfz/soulprint/issues

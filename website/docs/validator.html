@@ -103,6 +103,38 @@ GET /credentials/github/callback
       <tr><td>Robotic pattern</td><td>Call interval stddev &lt; 10% of mean → penalty</td></tr>
     </table>
 
+    <h2>BFT P2P Consensus <span style="font-size:0.7em;background:#2a9d8f;color:#fff;padding:2px 8px;border-radius:10px;margin-left:8px">v0.3.1</span></h2>
+    <p>Soulprint v0.3.1 adds <strong>BFT (Byzantine Fault Tolerant) consensus</strong> for nullifier registration — no blockchain, no gas fees, no external dependencies. Everything runs over the existing P2P network.</p>
+
+    <h3>🔁 PROPOSE → VOTE → COMMIT</h3>
+    <pre><code><span class="comment"># When a new identity is verified:</span>
+<span class="comment"># 1. Proposer node broadcasts PROPOSE with ZK proof hash</span>
+<span class="comment"># 2. Each node verifies the ZK proof locally</span>
+<span class="comment"># 3. Nodes broadcast VOTE (accept/reject)</span>
+<span class="comment"># 4. When N/2+1 accepts received → COMMIT broadcast to all nodes</span>
+<span class="comment"># 5. All nodes store the nullifier as committed</span>
+
+<span class="comment"># Single-node mode (0 peers): immediate local commit — no timeout</span></code></pre>
+
+    <h3>Consensus Endpoints</h3>
+    <table>
+      <tr><th>Endpoint</th><th>Description</th></tr>
+      <tr><td><code>GET /consensus/state-info</code></td><td>Handshake for state sync. Returns <code>nullifierCount</code>, <code>protocolHash</code>, <code>nodeVersion</code>. Incompatible nodes rejected immediately.</td></tr>
+      <tr><td><code>GET /consensus/state?page=N&amp;since=TS</code></td><td>Bulk state sync (paginated, 500 entries/page). Returns <code>nullifiers[]</code>, <code>attestations{}</code>, <code>reps{}</code>. Incremental with <code>since</code> timestamp.</td></tr>
+      <tr><td><code>POST /consensus/message</code></td><td>Receive consensus messages (<code>PROPOSE</code>, <code>VOTE</code>, <code>COMMIT</code>, <code>ATTEST</code>). Payload is AES-256-GCM encrypted. Wrong <code>PROTOCOL_HASH</code> → 400.</td></tr>
+    </table>
+
+    <h3>Security guarantees</h3>
+    <table>
+      <tr><th>Property</th><th>Mechanism</th></tr>
+      <tr><td>Anti-sybil</td><td>Nullifier = Poseidon(biometrics) — one per real person</td></tr>
+      <tr><td>Non-repudiation</td><td>Ed25519 signature on every consensus message</td></tr>
+      <tr><td>Network isolation</td><td><code>PROTOCOL_HASH</code> verified on every message — modified node ignored</td></tr>
+      <tr><td>Anti-replay</td><td><code>Set&lt;msgHash&gt;</code> — each message applied exactly once</td></tr>
+      <tr><td>ZK grounding</td><td>Every voter verifies the ZK proof independently</td></tr>
+      <tr><td>Fault tolerance</td><td>Quorum N/2+1 — tolerates up to N/2 malicious nodes</td></tr>
+    </table>
+
     <h2>Configuration</h2>
     <h3>Environment Variables</h3>
     <table>
