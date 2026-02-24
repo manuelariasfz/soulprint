@@ -9,6 +9,12 @@ import {
   verifyAttestation, computeReputation, defaultReputation,
 } from "soulprint-core";
 import { verifyProof, deserializeProof } from "soulprint-zkp";
+import {
+  publishAttestationP2P,
+  onAttestationReceived,
+  getP2PStats,
+  type SoulprintP2PNode,
+} from "./p2p.js";
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const PORT         = parseInt(process.env.SOULPRINT_PORT ?? "4888");
@@ -17,7 +23,7 @@ const KEYPAIR_FILE = join(NODE_DIR, "node-identity.json");
 const NULLIFIER_DB = join(NODE_DIR, "nullifiers.json");
 const REPUTE_DB    = join(NODE_DIR, "reputation.json");
 const PEERS_DB     = join(NODE_DIR, "peers.json");
-const VERSION      = "0.1.2";
+const VERSION      = "0.2.0";
 
 const MAX_BODY_BYTES       = 64 * 1024;
 const RATE_LIMIT_MS        = 60_000;
@@ -25,7 +31,34 @@ const RATE_LIMIT_MAX       = 10;
 const CLOCK_SKEW_MAX       = 300;        // ±5 min
 const MIN_ATTESTER_SCORE   = 60;         // solo servicios verificados emiten attestations
 const ATT_MAX_AGE_SECONDS  = 3600;       // attestation no puede tener >1h de antigüedad
-const GOSSIP_TIMEOUT_MS    = 3_000;      // timeout del gossip P2P
+const GOSSIP_TIMEOUT_MS    = 3_000;      // timeout del gossip HTTP fallback
+
+// ── P2P Node (Phase 5) ────────────────────────────────────────────────────────
+let p2pNode: SoulprintP2PNode | null = null;
+
+/**
+ * Inyecta el nodo libp2p al validador.
+ * Cuando se llama:
+ *  1. Se registra el handler de attestations entrantes por GossipSub
+ *  2. Desde ese momento, gossipAttestation() también publica por P2P
+ */
+export function setP2PNode(node: SoulprintP2PNode): void {
+  p2pNode = node;
+
+  // Recibir attestations de otros nodos via GossipSub
+  onAttestationReceived(node, (att, fromPeer) => {
+    // Validar firma antes de aplicar
+    if (!verifyAttestation(att)) {
+      console.warn(`[p2p] Attestation inválida de peer ${fromPeer.slice(0, 16)}... — descartada`);
+      return;
+    }
+    // Anti-replay ya está dentro de applyAttestation()
+    applyAttestation(att);
+    console.log(`[p2p] Attestation recibida de peer ${fromPeer.slice(0, 16)}... → ${att.target_did.slice(0, 20)}... (${att.value > 0 ? "+" : ""}${att.value})`);
+  });
+
+  console.log(`[p2p] P2P integrado → ${node.peerId.toString().slice(0, 16)}...`);
+}
 
 // ── Rate limiter ──────────────────────────────────────────────────────────────
 const rateLimits = new Map<string, { count: number; resetAt: number }>();
@@ -112,11 +145,24 @@ function loadPeers() {
 function savePeers() { writeFileSync(PEERS_DB, JSON.stringify(peers, null, 2)); }
 
 /**
- * Gossip: reenvía la attestation a todos los peers conocidos de forma async.
- * Fire-and-forget — no bloquea la respuesta al cliente.
- * Si un peer falla, se ignora silenciosamente (eventual consistency).
+ * Gossip: propaga la attestation a la red.
+ *
+ * Estrategia:
+ *  1. P2P GossipSub (Phase 5) — si el nodo libp2p está activo
+ *  2. HTTP fire-and-forget (Phase 3) — fallback para nodos legacy sin libp2p
+ *
+ * Ambos canales son fire-and-forget: no bloquean la respuesta al cliente.
  */
-function gossipAttestation(att: BotAttestation, excludeUrl?: string) {
+async function gossipAttestation(att: BotAttestation, excludeUrl?: string) {
+  // ── Canal 1: libp2p GossipSub ─────────────────────────────────────────────
+  if (p2pNode) {
+    const recipients = await publishAttestationP2P(p2pNode, att);
+    if (recipients > 0) {
+      console.log(`[p2p] Attestation publicada → ${recipients} peer(s) via GossipSub`);
+    }
+  }
+
+  // ── Canal 2: HTTP gossip (fallback para nodos legacy) ─────────────────────
   const targets = peers.filter(p => p !== excludeUrl);
   for (const peerUrl of targets) {
     fetch(`${peerUrl}/reputation/attest`, {
@@ -168,6 +214,8 @@ function getIP(req: IncomingMessage): string {
 
 // ── GET /info ─────────────────────────────────────────────────────────────────
 function handleInfo(res: ServerResponse, nodeKeypair: SoulprintKeypair) {
+  const p2pStats = p2pNode ? getP2PStats(p2pNode) : null;
+
   json(res, 200, {
     node_did:            nodeKeypair.did,
     version:             VERSION,
@@ -176,8 +224,16 @@ function handleInfo(res: ServerResponse, nodeKeypair: SoulprintKeypair) {
     total_reputation:    Object.keys(repStore).length,
     known_peers:         peers.length,
     supported_countries: ["CO"],
-    capabilities:        ["zk-verify", "anti-sybil", "co-sign", "bot-reputation"],
+    capabilities:        ["zk-verify", "anti-sybil", "co-sign", "bot-reputation", "p2p-gossipsub"],
     rate_limit:          `${RATE_LIMIT_MAX} req/min per IP`,
+    // P2P stats (Phase 5)
+    p2p: p2pStats ? {
+      enabled:      true,
+      peer_id:      p2pStats.peerId,
+      peers:        p2pStats.peers,
+      pubsub_peers: p2pStats.pubsubPeers,
+      multiaddrs:   p2pStats.multiaddrs,
+    } : { enabled: false },
   });
 }
 
@@ -451,3 +507,4 @@ export async function getNodeInfo(nodeUrl: string) {
 }
 
 export const BOOTSTRAP_NODES: string[] = [];
+export { applyAttestation };
