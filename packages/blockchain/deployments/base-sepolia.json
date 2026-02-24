@@ -1,15 +1,21 @@
 {
   "network": "base-sepolia",
   "chainId": 84532,
-  "deployedAt": "2026-02-24T20:08:57.091Z",
+  "version": "0.3.4",
+  "deployedAt": "2026-02-24T20:53:02.300Z",
   "deployer": "0x0755A3001F488da00088838c4a068dF7f883ad87",
+  "verifierReal": true,
+  "adminLocked": true,
   "contracts": {
     "ProtocolConstants": "0x20EEeFe3e59e6c76065A3037375053e7A9c94529",
-    "Groth16Verifier": "0x21D65c437eC2C024339eA97e7739387Fbe854381",
-    "SoulprintRegistry": "0xE6F804c3c90143721A938a20478a779F142254Fd",
+    "Groth16Verifier": "0x5b5B79a095f2C5c0207414aba9d4d54245EA75a6",
+    "Groth16VerifierMock": "0x21D65c437eC2C024339eA97e7739387Fbe854381",
+    "SoulprintRegistry": "0xD09ea421C43fB54b2A079362C7321cB732471f12",
+    "SoulprintRegistryV1": "0xE6F804c3c90143721A938a20478a779F142254Fd",
     "AttestationLedger": "0xD91595bbb8f649e4E3a14cF525cC83D098FEfE57",
     "ValidatorRegistry": "0xE9418dBF769082363e784de006008b1597F5EeE9",
-    "GovernanceModule": "0xE74Cd1Aa66541dF76e5a82a05F11f80B31FCe217"
+    "GovernanceModule": "0x0d3bf889D2D353244f748042B48649Fa94AfF345",
+    "GovernanceModuleV1": "0xE74Cd1Aa66541dF76e5a82a05F11f80B31FCe217"
   },
   "protocolHash": "0xdfe1ccca1270ec86f93308dc4b981bab1d6bd74bdcc334059f4380b407ca07ca"
 }

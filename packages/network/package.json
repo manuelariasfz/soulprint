@@ -1,7 +1,7 @@
 {
   "name": "soulprint-network",
-  "version": "0.3.3",
-  "description": "Soulprint validator node — HTTP server that verifies ZK proofs, co-signs SPTs, anti-Sybil registry",
+  "version": "0.3.4",
+  "description": "Soulprint validator node \u2014 HTTP server that verifies ZK proofs, co-signs SPTs, anti-Sybil registry",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
@@ -12,8 +12,9 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsc",
-    "start": "node dist/server.js"
+    "build": "tsc && node scripts/compute-code-hash.mjs",
+    "start": "node dist/server.js",
+    "build:hash": "node scripts/compute-code-hash.mjs"
   },
   "publishConfig": {
     "access": "public"

@@ -22,6 +22,7 @@ import {
   SoulprintBlockchainClient,
   loadBlockchainConfig,
 } from "./blockchain/blockchain-client.js";
+import { getCodeIntegrity, logCodeIntegrity, computeRuntimeHash } from "./code-integrity.js";
 import {
   publishAttestationP2P,
   onAttestationReceived,
@@ -778,6 +779,29 @@ export function startValidatorNode(port: number = PORT) {
     if (cleanUrl.startsWith("/nullifier/")   && req.method === "GET")
       return handleNullifierCheck(res, decodeURIComponent(cleanUrl.replace("/nullifier/", "")));
 
+    // ── Code integrity + health ───────────────────────────────────────────────
+    if (cleanUrl === "/health" && req.method === "GET") {
+      const integrity = getCodeIntegrity();
+      const govHash   = await client?.getCurrentApprovedHash() ?? null;
+      return json(res, 200, {
+        status:              "ok",
+        version:             VERSION,
+        protocolHash:        PROTOCOL_HASH,
+        codeHash:            integrity.codeHash,
+        codeHashHex:         integrity.codeHashHex,
+        codeHashAvailable:   integrity.available,
+        codeBuiltAt:         integrity.computedAt,
+        codeFileCount:       integrity.fileCount,
+        runtimeHash:         computeRuntimeHash(),
+        governanceApprovedHash: govHash,
+        blockchainConnected: !!client?.isConnected,
+        nodeCompatible:      !govHash ||
+          govHash.toLowerCase() === ("0x" + PROTOCOL_HASH).toLowerCase(),
+        uptime:              process.uptime(),
+        ts:                  Date.now(),
+      });
+    }
+
     // ── Blockchain anchor status ──────────────────────────────────────────────
     if (cleanUrl === "/anchor/stats" && req.method === "GET") {
       return json(res, 200, anchor.getStats());
@@ -918,6 +942,7 @@ export function startValidatorNode(port: number = PORT) {
   });
 
   server.listen(port, () => {
+    logCodeIntegrity();
     console.log(`\n🌐 Soulprint Validator Node v${VERSION}`);
     console.log(`   Node DID:     ${nodeKeypair.did}`);
     console.log(`   Listening:    http://0.0.0.0:${port}`);
@@ -928,6 +953,7 @@ export function startValidatorNode(port: number = PORT) {
     console.log(`   Known peers:  ${peers.length}`);
     console.log(`\n   Core endpoints:`);
     console.log(`   POST /verify              verify ZK proof + co-sign`);
+    console.log(`   GET  /health              code integrity + governance status`);
     console.log(`   GET  /info                node info`);
     console.log(`   GET  /protocol            protocol constants (immutable)`);
     console.log(`   GET  /nullifier/:n        anti-sybil check`);

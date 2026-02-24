@@ -51,14 +51,23 @@ contract SoulprintRegistry is ProtocolConstants {
     /// @notice nullifier → true si ya está registrado (anti-sybil)
     mapping(bytes32 => bool) public nullifierUsed;
 
-    /// @notice Referencia al Groth16Verifier desplegado
-    IGroth16Verifier public immutable verifier;
+    /// @notice Referencia al Groth16Verifier desplegado.
+    /// Puede actualizarse via governance (70% supermayoría on-chain).
+    IGroth16Verifier public verifier;
+
+    /// @notice Dirección del GovernanceModule que controla upgrades
+    address public governance;
+
+    /// @notice Owner inicial (deployer) — puede ceder control a governance
+    address public admin;
 
     /// @notice Total de identidades registradas
     uint256 public totalRegistered;
 
     // ── Events ────────────────────────────────────────────────────────────────
 
+    event VerifierUpdated(address indexed oldVerifier, address indexed newVerifier, address indexed by);
+    event GovernanceSet(address indexed governance);
     event IdentityRegistered(
         bytes32 indexed nullifier,
         string  indexed did,
@@ -82,7 +91,45 @@ contract SoulprintRegistry is ProtocolConstants {
     // ── Constructor ───────────────────────────────────────────────────────────
 
     constructor(address _verifier) {
-        verifier = IGroth16Verifier(_verifier);
+        verifier  = IGroth16Verifier(_verifier);
+        admin     = msg.sender;
+    }
+
+    // ── Admin functions ────────────────────────────────────────────────────
+
+    /**
+     * @notice Reemplaza el ZK verifier.
+     *
+     * TESTNET:    admin (deployer) puede hacerlo directamente.
+     * MAINNET:    debería hacer esto solo el GovernanceModule tras 70% supermayoría.
+     *
+     * Al llamar setGovernance(), el admin queda bloqueado para siempre.
+     * Solo el governance puede luego actualizar el verifier.
+     *
+     * @param newVerifier  Dirección del nuevo Groth16Verifier
+     */
+    function updateVerifier(address newVerifier) external {
+        require(
+            msg.sender == admin || msg.sender == governance,
+            "Only admin or governance"
+        );
+        require(newVerifier != address(0), "Zero address");
+        address old = address(verifier);
+        verifier = IGroth16Verifier(newVerifier);
+        emit VerifierUpdated(old, newVerifier, msg.sender);
+    }
+
+    /**
+     * @notice Asigna el GovernanceModule como controlador.
+     * Una vez asignado, el admin NO puede volver a llamar updateVerifier.
+     * Solo puede hacerlo governance. Irreversible.
+     */
+    function setGovernance(address _governance) external {
+        require(msg.sender == admin, "Only admin");
+        require(_governance != address(0), "Zero address");
+        governance = _governance;
+        admin      = address(0);   // bloquear admin para siempre
+        emit GovernanceSet(_governance);
     }
 
     // ── Core functions ────────────────────────────────────────────────────────
@@ -106,7 +153,7 @@ contract SoulprintRegistry is ProtocolConstants {
         uint256[2]    calldata zkProofA,
         uint256[2][2] calldata zkProofB,
         uint256[2]    calldata zkProofC,
-        uint256[2]    calldata publicInputs
+        uint256[3]    calldata publicInputs  // [nullifier_hash, context_tag, commitment]
     ) external {
         // Anti-sybil: un nullifier = una persona
         if (nullifierUsed[nullifier]) revert NullifierAlreadyUsed(nullifier);
