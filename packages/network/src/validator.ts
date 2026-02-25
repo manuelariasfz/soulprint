@@ -974,6 +974,30 @@ export function startValidatorNode(port: number = PORT) {
 
     if (cleanUrl === "/info"                 && req.method === "GET")  return handleInfo(res, nodeKeypair);
     if (cleanUrl === "/protocol"             && req.method === "GET")  return handleProtocol(res);
+
+    // GET /network/stats — stats públicas para la landing page
+    if (cleanUrl === "/network/stats" && req.method === "GET") {
+      const p2pStats = p2pNode ? getP2PStats(p2pNode) : null;
+      return json(res, 200, {
+        node_did:           nodeKeypair.did.slice(0, 20) + "...",
+        version:            VERSION,
+        protocol_hash:      PROTOCOL_HASH.slice(0, 16) + "...",
+        // identidades y reputación
+        verified_identities: Object.keys(nullifiers).length,
+        reputation_profiles: Object.keys(repStore).length,
+        // peers HTTP
+        known_peers:        peers.length,
+        // P2P libp2p
+        p2p_peers:          p2pStats?.peers        ?? 0,
+        p2p_pubsub_peers:   p2pStats?.pubsubPeers  ?? 0,
+        p2p_enabled:        !!p2pNode,
+        // estado general
+        uptime_ms:          Date.now() - (globalThis as any)._startTime || 0,
+        timestamp:          Date.now(),
+        // MCPRegistry
+        mcps_verified:      null,   // lazy — enriquecido abajo
+      });
+    }
     if (cleanUrl === "/verify"               && req.method === "POST") return handleVerify(req, res, nodeKeypair, ip);
     if (cleanUrl === "/token/renew"          && req.method === "POST") return handleTokenRenew(req, res, nodeKeypair);
     if (cleanUrl === "/challenge"            && req.method === "POST") return handleChallenge(req, res, nodeKeypair);

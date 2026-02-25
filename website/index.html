@@ -489,7 +489,7 @@
   <div class="stats-bar">
     <div class="stat"><div class="stat-num">7</div><div class="stat-label">npm packages</div></div>
     <div class="stat"><div class="stat-num">7</div><div class="stat-label">countries supported</div></div>
-    <div class="stat"><div class="stat-num">104+</div><div class="stat-label">tests passing</div></div>
+    <div class="stat"><div class="stat-num">303</div><div class="stat-label">tests passing</div></div>
     <div class="stat"><div class="stat-num">100</div><div class="stat-label">max trust score</div></div>
     <div class="stat"><div class="stat-num">0</div><div class="stat-label">PII stored</div></div>
     <div class="stat"><div class="stat-num">MIT</div><div class="stat-label">license</div></div>
@@ -714,9 +714,330 @@
 </div>
 </section>
 
+<!-- ══ P2P NETWORK ══ -->
+<section id="network" style="background:var(--bg);max-width:100%;padding:5rem 2rem;overflow:hidden">
+<div style="max-width:1100px;margin:0 auto">
+  <div class="section-label">Live Network</div>
+  <h2>Decentralized <span>P2P validator network</span></h2>
+  <p class="section-sub">
+    Every node runs an independent ZK verifier. No central authority — identities are
+    co-signed across the network using BFT consensus and anchored to Base Sepolia blockchain.
+  </p>
+
+  <!-- Canvas visualization -->
+  <div style="position:relative;border-radius:16px;overflow:hidden;background:linear-gradient(135deg,#0d0d1a 0%,#0a0a14 100%);border:1px solid rgba(124,108,245,.2);margin:2rem 0">
+    <canvas id="p2p-canvas" width="1060" height="380"
+      style="width:100%;height:320px;display:block"></canvas>
+
+    <!-- Live overlay -->
+    <div id="net-overlay" style="
+      position:absolute;top:1rem;right:1rem;
+      background:rgba(10,10,20,.85);
+      border:1px solid rgba(124,108,245,.3);
+      border-radius:10px;padding:.75rem 1.1rem;
+      font-size:.8rem;min-width:160px;
+      backdrop-filter:blur(8px)">
+      <div style="color:#7c6cf5;font-weight:700;margin-bottom:.5rem;letter-spacing:.05em;font-size:.7rem">LIVE NODE</div>
+      <div id="net-did"   style="color:#a78bfa;font-family:monospace;font-size:.72rem;margin-bottom:.4rem">connecting...</div>
+      <div id="net-hash"  style="color:#6b7280;font-family:monospace;font-size:.68rem">hash: —</div>
+      <div id="net-uptime" style="color:#6b7280;font-size:.7rem;margin-top:.3rem">uptime: —</div>
+    </div>
+
+    <!-- Status badge -->
+    <div id="net-status" style="
+      position:absolute;top:1rem;left:1rem;
+      background:rgba(10,10,20,.85);
+      border:1px solid rgba(74,222,128,.3);
+      border-radius:20px;padding:.35rem .85rem;
+      font-size:.75rem;display:flex;align-items:center;gap:.45rem;
+      backdrop-filter:blur(8px)">
+      <span id="net-dot" style="width:7px;height:7px;border-radius:50%;background:#4ade80;
+        animation:pulse-dot 2s infinite;display:inline-block"></span>
+      <span id="net-status-txt" style="color:#e5e7eb">Initializing...</span>
+    </div>
+  </div>
+
+  <!-- Stats cards -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1rem;margin-top:1.5rem">
+    <div class="net-card">
+      <div id="stat-peers" class="net-num">—</div>
+      <div class="net-lbl">🌐 Connected peers</div>
+    </div>
+    <div class="net-card">
+      <div id="stat-verified" class="net-num">—</div>
+      <div class="net-lbl">✅ Verified identities</div>
+    </div>
+    <div class="net-card">
+      <div id="stat-reputation" class="net-num">—</div>
+      <div class="net-lbl">⭐ Reputation profiles</div>
+    </div>
+    <div class="net-card">
+      <div id="stat-mcps" class="net-num">—</div>
+      <div class="net-lbl">🔌 Verified MCPs</div>
+    </div>
+  </div>
+
+  <!-- CTA -->
+  <div style="text-align:center;margin-top:2.5rem">
+    <p style="color:var(--muted);font-size:.9rem;margin-bottom:1rem">
+      Run a validator node — become part of the network
+    </p>
+    <div style="display:inline-flex;gap:.75rem;flex-wrap:wrap;justify-content:center">
+      <a class="btn-primary" href="https://github.com/manuelariasfz/soulprint#run-a-validator-node" target="_blank">
+        Run a node ↗
+      </a>
+      <a class="btn-secondary" href="docs/validator.html">
+        Node docs →
+      </a>
+    </div>
+  </div>
+</div>
+</section>
+
+<style>
+  @keyframes pulse-dot { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(1.4)} }
+  .net-card {
+    background:var(--bg2);border:1px solid rgba(124,108,245,.15);
+    border-radius:12px;padding:1.25rem 1rem;text-align:center;
+    transition:border-color .2s,transform .2s;
+  }
+  .net-card:hover { border-color:rgba(124,108,245,.4);transform:translateY(-2px) }
+  .net-num { font-size:2rem;font-weight:800;background:var(--gradient);
+    -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+    background-clip:text;margin-bottom:.3rem }
+  .net-lbl { font-size:.8rem;color:var(--muted) }
+  #net-status.offline { border-color:rgba(239,68,68,.3) }
+  #net-status.offline #net-dot { background:#ef4444;animation:pulse-dot 1s infinite }
+</style>
+
+<script>
+(function() {
+  // ── Config ─────────────────────────────────────────────────────────────────
+  // In prod, point to public bootstrap nodes.
+  // In dev, the local node at 4888 is tried.
+  const NODES = [
+    "http://localhost:4888",
+    // "https://node1.soulprint.digital",  // ← future public bootstrap
+  ];
+
+  // ── Canvas P2P animation ───────────────────────────────────────────────────
+  const canvas  = document.getElementById("p2p-canvas");
+  const ctx     = canvas.getContext("2d");
+  let W = canvas.width, H = canvas.height;
+
+  // Resize canvas to match display size
+  function resizeCanvas() {
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width > 0) {
+      canvas.width  = rect.width  * devicePixelRatio;
+      canvas.height = rect.height * devicePixelRatio;
+      W = canvas.width; H = canvas.height;
+      ctx.scale(devicePixelRatio, devicePixelRatio);
+    }
+  }
+  setTimeout(resizeCanvas, 100);
+
+  // Node data
+  const NODE_COUNT = 14;
+  const nodes = Array.from({ length: NODE_COUNT }, (_, i) => ({
+    x:    20 + Math.random() * 860,
+    y:    20 + Math.random() * 300,
+    vx:   (Math.random() - .5) * .4,
+    vy:   (Math.random() - .5) * .4,
+    r:    i === 0 ? 10 : 5 + Math.random() * 4,
+    verified: i < 4,
+    pulse: Math.random() * Math.PI * 2,
+    color: i === 0 ? "#7c6cf5" : (i < 4 ? "#4ade80" : "#6b7280"),
+  }));
+
+  // Packets traveling between nodes
+  const packets = [];
+  function spawnPacket() {
+    const a = Math.floor(Math.random() * NODE_COUNT);
+    let b = Math.floor(Math.random() * NODE_COUNT);
+    while (b === a) b = Math.floor(Math.random() * NODE_COUNT);
+    packets.push({ from: a, to: b, t: 0, speed: .008 + Math.random() * .012 });
+  }
+  setInterval(spawnPacket, 800);
+
+  function draw() {
+    const DW = canvas.width  / devicePixelRatio;
+    const DH = canvas.height / devicePixelRatio;
+
+    ctx.clearRect(0, 0, DW, DH);
+
+    // Move nodes
+    nodes.forEach(n => {
+      n.x += n.vx; n.y += n.vy; n.pulse += .03;
+      if (n.x < 10 || n.x > DW - 10) n.vx *= -1;
+      if (n.y < 10 || n.y > DH - 10) n.vy *= -1;
+    });
+
+    // Draw edges between nearby nodes
+    ctx.lineWidth = .5;
+    for (let i = 0; i < NODE_COUNT; i++) {
+      for (let j = i + 1; j < NODE_COUNT; j++) {
+        const dx = nodes[i].x - nodes[j].x;
+        const dy = nodes[i].y - nodes[j].y;
+        const d  = Math.sqrt(dx * dx + dy * dy);
+        if (d < 200) {
+          const alpha = (1 - d / 200) * .25;
+          ctx.strokeStyle = `rgba(124,108,245,${alpha})`;
+          ctx.beginPath();
+          ctx.moveTo(nodes[i].x, nodes[i].y);
+          ctx.lineTo(nodes[j].x, nodes[j].y);
+          ctx.stroke();
+        }
+      }
+    }
+
+    // Draw packets
+    for (let i = packets.length - 1; i >= 0; i--) {
+      const p = packets[i];
+      p.t += p.speed;
+      if (p.t >= 1) { packets.splice(i, 1); continue; }
+      const from = nodes[p.from], to = nodes[p.to];
+      const x = from.x + (to.x - from.x) * p.t;
+      const y = from.y + (to.y - from.y) * p.t;
+      ctx.beginPath();
+      ctx.arc(x, y, 2.5, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(167,139,250,.9)";
+      ctx.fill();
+    }
+
+    // Draw nodes
+    nodes.forEach((n, i) => {
+      const pulse = Math.sin(n.pulse) * .5 + .5;
+
+      // Glow ring for verified nodes
+      if (n.verified) {
+        const grd = ctx.createRadialGradient(n.x, n.y, n.r, n.x, n.y, n.r * 3);
+        grd.addColorStop(0, `rgba(74,222,128,${.25 * pulse})`);
+        grd.addColorStop(1, "rgba(74,222,128,0)");
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, n.r * 3, 0, Math.PI * 2);
+        ctx.fillStyle = grd;
+        ctx.fill();
+      }
+
+      // Main node
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
+      ctx.fillStyle = n.color;
+      ctx.fill();
+
+      // Center dot
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, n.r * .35, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(10,10,20,.8)";
+      ctx.fill();
+
+      // Local node label
+      if (i === 0) {
+        ctx.font = "bold 11px system-ui";
+        ctx.fillStyle = "#a78bfa";
+        ctx.fillText("you", n.x + n.r + 4, n.y + 4);
+      }
+    });
+
+    requestAnimationFrame(draw);
+  }
+  requestAnimationFrame(draw);
+
+  // ── Live stats fetching ────────────────────────────────────────────────────
+  let connected = false;
+
+  function setStatus(ok) {
+    const dot  = document.getElementById("net-dot");
+    const txt  = document.getElementById("net-status-txt");
+    const card = document.getElementById("net-status");
+    if (ok) {
+      dot.style.background = "#4ade80";
+      txt.textContent = "Node connected";
+      card.style.borderColor = "rgba(74,222,128,.3)";
+      card.classList.remove("offline");
+    } else {
+      dot.style.background = "#ef4444";
+      txt.textContent = "No node reachable";
+      card.style.borderColor = "rgba(239,68,68,.3)";
+      card.classList.add("offline");
+    }
+  }
+
+  function animateNum(id, val) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const current = parseInt(el.textContent) || 0;
+    const diff = val - current;
+    if (diff === 0) return;
+    let step = 0;
+    const total = 20;
+    const timer = setInterval(() => {
+      step++;
+      el.textContent = Math.round(current + diff * (step / total));
+      if (step >= total) { el.textContent = val; clearInterval(timer); }
+    }, 16);
+  }
+
+  function updateOverlay(data) {
+    document.getElementById("net-did").textContent    = data.node_did || "—";
+    document.getElementById("net-hash").textContent   = "hash: " + (data.protocol_hash || "—");
+    const up = data.uptime_ms ? Math.floor(data.uptime_ms / 60000) + "m" : "—";
+    document.getElementById("net-uptime").textContent = "uptime: " + up;
+  }
+
+  async function fetchStats() {
+    for (const nodeUrl of NODES) {
+      try {
+        const r = await fetch(nodeUrl + "/network/stats", { signal: AbortSignal.timeout(3000) });
+        if (!r.ok) continue;
+        const d = await r.json();
+
+        // Update live nodes to reflect real peer count
+        const peerCount = Math.max(d.known_peers || 0, d.p2p_peers || 0);
+        nodes[0].color   = "#7c6cf5";
+        nodes[0].verified = true;
+        // Mark peers as active
+        for (let i = 1; i <= Math.min(peerCount, 5); i++) {
+          nodes[i].color = "#4ade80";
+          nodes[i].verified = true;
+        }
+
+        animateNum("stat-peers",     peerCount);
+        animateNum("stat-verified",  d.verified_identities || 0);
+        animateNum("stat-reputation", d.reputation_profiles || 0);
+        updateOverlay(d);
+
+        // MCPs from /mcps/verified
+        const mr = await fetch(nodeUrl + "/mcps/verified", { signal: AbortSignal.timeout(3000) }).catch(() => null);
+        if (mr && mr.ok) {
+          const md = await mr.json();
+          animateNum("stat-mcps", md.total || 0);
+        }
+
+        setStatus(true);
+        connected = true;
+        return;
+      } catch { /* try next */ }
+    }
+
+    // No node reachable — show zeros with offline state
+    if (!connected) {
+      ["stat-peers","stat-verified","stat-reputation","stat-mcps"].forEach(id => {
+        document.getElementById(id).textContent = "0";
+      });
+      document.getElementById("net-did").textContent = "No node connected";
+      setStatus(false);
+    }
+  }
+
+  fetchStats();
+  setInterval(fetchStats, 10000);   // refresh every 10s
+})();
+</script>
+
 <!-- ══ PACKAGES ══ -->
-<section id="packages">
-  <div class="section-label">npm Packages</div>
+<section id="packages">  <div class="section-label">npm Packages</div>
   <h2>7 packages, <span>one protocol</span></h2>
   <p class="section-sub">All MIT licensed. Install only what you need. No vendorlock.</p>
 
