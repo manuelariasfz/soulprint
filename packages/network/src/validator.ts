@@ -31,6 +31,10 @@ import {
 } from "./blockchain/blockchain-client.js";
 import { getCodeIntegrity, logCodeIntegrity, computeRuntimeHash } from "./code-integrity.js";
 import {
+  isVerifiedOnChain, getMCPEntry, getVerifiedMCPEntries, getAllMCPEntries,
+  getRegistryInfo, verifyMCPOnChain, revokeMCPOnChain, registerMCPOnChain,
+} from "./mcp-registry-client.js";
+import {
   publishAttestationP2P,
   onAttestationReceived,
   getP2PStats,
@@ -1140,6 +1144,135 @@ export function startValidatorNode(port: number = PORT) {
       return json(res, 200, { txHash, proposalId: body.proposalId, executed: true });
     }
 
+    // ── MCPRegistry — consulta pública ────────────────────────────────────────
+
+    // GET /mcps/verified — lista todos los MCPs verificados on-chain
+    if (cleanUrl === "/mcps/verified" && req.method === "GET") {
+      const [verified, info] = await Promise.all([getVerifiedMCPEntries(), getRegistryInfo()]);
+      return json(res, 200, {
+        total:    verified.length,
+        registry: info,
+        mcps: verified.map(e => ({
+          address:     e.address,
+          name:        e.name,
+          url:         e.url,
+          category:    e.category,
+          description: e.description,
+          verified_at: new Date(e.verifiedAt * 1000).toISOString(),
+          badge:       "✅ VERIFIED",
+        })),
+      });
+    }
+
+    // GET /mcps/all — lista todos los MCPs (verificados + pendientes)
+    if (cleanUrl === "/mcps/all" && req.method === "GET") {
+      const [all, info] = await Promise.all([getAllMCPEntries(), getRegistryInfo()]);
+      return json(res, 200, {
+        total:    all.length,
+        registry: info,
+        mcps: all.map(e => ({
+          address:     e.address,
+          name:        e.name,
+          url:         e.url,
+          category:    e.category,
+          verified:    e.verified,
+          registered_at: new Date(e.registeredAt * 1000).toISOString(),
+          verified_at: e.verifiedAt > 0 ? new Date(e.verifiedAt * 1000).toISOString() : null,
+          revoked_at:  e.revokedAt  > 0 ? new Date(e.revokedAt  * 1000).toISOString() : null,
+        })),
+      });
+    }
+
+    // GET /mcps/status/:address — estado de un MCP específico
+    if (cleanUrl.match(/^\/mcps\/status\/0x[0-9a-fA-F]{40}$/) && req.method === "GET") {
+      const addr  = cleanUrl.split("/").pop()!;
+      const entry = await getMCPEntry(addr);
+      if (!entry) return json(res, 404, { address: addr, registered: false, verified: false });
+      return json(res, 200, {
+        address:     addr,
+        name:        entry.name,
+        url:         entry.url,
+        category:    entry.category,
+        registered:  true,
+        verified:    entry.verified,
+        registered_at: new Date(entry.registeredAt * 1000).toISOString(),
+        verified_at: entry.verifiedAt > 0 ? new Date(entry.verifiedAt * 1000).toISOString() : null,
+        revoked_at:  entry.revokedAt  > 0 ? new Date(entry.revokedAt  * 1000).toISOString() : null,
+        badge:       entry.verified ? "✅ VERIFIED by Soulprint" : "⏳ Registered — pending verification",
+      });
+    }
+
+    // ── MCPRegistry — admin (requiere ADMIN_TOKEN o ADMIN_PRIVATE_KEY) ──────
+
+    // Verificar admin token (Bearer header o ADMIN_TOKEN env)
+    const ADMIN_TOKEN = process.env.ADMIN_TOKEN || "";
+    function isAdmin(): boolean {
+      if (!ADMIN_TOKEN) return !!process.env.ADMIN_PRIVATE_KEY; // fallback: solo key
+      const auth = (req.headers["authorization"] ?? "") as string;
+      return auth === `Bearer ${ADMIN_TOKEN}`;
+    }
+
+    // POST /admin/mcp/verify — verificar un MCP
+    if (cleanUrl === "/admin/mcp/verify" && req.method === "POST") {
+      if (!isAdmin()) return json(res, 401, { error: "Unauthorized — Bearer ADMIN_TOKEN required" });
+      if (!process.env.ADMIN_PRIVATE_KEY) return json(res, 503, { error: "ADMIN_PRIVATE_KEY not configured" });
+      const body = await readBody(req);
+      if (!body?.address) return json(res, 400, { error: "Required: address" });
+      const result = await verifyMCPOnChain(body.address);
+      if (!result.success) return json(res, 500, { error: result.error });
+      return json(res, 200, {
+        address:  body.address,
+        verified: true,
+        txHash:   result.txHash,
+        explorer: `https://sepolia.basescan.org/tx/${result.txHash}`,
+        message:  `✅ MCP ${body.address} verified on-chain by Soulprint`,
+      });
+    }
+
+    // POST /admin/mcp/revoke — revocar un MCP
+    if (cleanUrl === "/admin/mcp/revoke" && req.method === "POST") {
+      if (!isAdmin()) return json(res, 401, { error: "Unauthorized — Bearer ADMIN_TOKEN required" });
+      if (!process.env.ADMIN_PRIVATE_KEY) return json(res, 503, { error: "ADMIN_PRIVATE_KEY not configured" });
+      const body = await readBody(req);
+      if (!body?.address || !body?.reason) return json(res, 400, { error: "Required: address, reason" });
+      const result = await revokeMCPOnChain(body.address, body.reason);
+      if (!result.success) return json(res, 500, { error: result.error });
+      return json(res, 200, {
+        address:  body.address,
+        revoked:  true,
+        reason:   body.reason,
+        txHash:   result.txHash,
+        explorer: `https://sepolia.basescan.org/tx/${result.txHash}`,
+        message:  `🚫 MCP ${body.address} revoked. Reason: "${body.reason}"`,
+      });
+    }
+
+    // POST /admin/mcp/register — registrar MCP (permissionless, cualquiera)
+    if (cleanUrl === "/admin/mcp/register" && req.method === "POST") {
+      const body = await readBody(req);
+      if (!body?.ownerKey || !body?.address || !body?.name || !body?.url) {
+        return json(res, 400, { error: "Required: ownerKey, address, name, url" });
+      }
+      const result = await registerMCPOnChain({
+        ownerPrivateKey: body.ownerKey,
+        mcpAddress:      body.address,
+        name:            body.name,
+        url:             body.url,
+        did:             body.did ?? "",
+        category:        body.category ?? "general",
+        description:     body.description ?? "",
+      });
+      if (!result.success) return json(res, 500, { error: result.error });
+      return json(res, 201, {
+        address:   body.address,
+        name:      body.name,
+        txHash:    result.txHash,
+        explorer:  `https://sepolia.basescan.org/tx/${result.txHash}`,
+        message:   `✅ MCP registered. Contact Soulprint admin to verify.`,
+        next_step: "POST /admin/mcp/verify with Bearer ADMIN_TOKEN",
+      });
+    }
+
     json(res, 404, { error: "Not found" });
   });
 
@@ -1175,6 +1308,13 @@ export function startValidatorNode(port: number = PORT) {
     console.log(`   GET  /consensus/state-info    handshake para state-sync`);
     console.log(`   GET  /consensus/state         bulk state sync paginado`);
     console.log(`   POST /consensus/message       recibir msg PROPOSE/VOTE/COMMIT/ATTEST`);
+    console.log(`\n   MCPRegistry (on-chain, Base Sepolia):`);
+    console.log(`   GET  /mcps/verified             MCPs verificados por Soulprint`);
+    console.log(`   GET  /mcps/all                  todos los MCPs registrados`);
+    console.log(`   GET  /mcps/status/:address      estado de un MCP`);
+    console.log(`   POST /admin/mcp/register        registrar MCP (permissionless)`);
+    console.log(`   POST /admin/mcp/verify    🔐    verificar  (Bearer ADMIN_TOKEN)`);
+    console.log(`   POST /admin/mcp/revoke    🔐    revocar    (Bearer ADMIN_TOKEN)`);
     console.log(`\n`);
   });
 
