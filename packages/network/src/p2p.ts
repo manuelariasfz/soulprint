@@ -162,3 +162,41 @@ export function getP2PStats(node: SoulprintP2PNode): P2PStats {
 export async function stopP2PNode(node: SoulprintP2PNode): Promise<void> {
   try { await node.stop(); } catch { /* ignorar */ }
 }
+
+// ── dial a peer by multiaddr string (best-effort — HTTP gossip is the primary mechanism) ──
+// Note: in WSL2/NAT environments mDNS multicast doesn't work.
+// This function attempts libp2p TCP dial using the peer's advertised multiaddrs.
+// Falls back gracefully — HTTP gossip layer (known_peers) handles message propagation.
+export async function dialP2PPeer(
+  node:     SoulprintP2PNode,
+  maddrStr: string,
+  timeoutMs = 5_000,
+): Promise<boolean> {
+  try {
+    // Extract PeerId from the multiaddr string and add multiaddr to peer store
+    // so libp2p can use its own internal Multiaddr class (avoids version mismatch)
+    const peerIdStr = maddrStr.split("/p2p/")[1];
+    if (!peerIdStr) return false;
+
+    // Use peer store to register the address, then dial by PeerId
+    // This lets libp2p use its own Multiaddr parsing internally
+    const { peerIdFromString } = await import("@libp2p/peer-id");
+    const peerId = peerIdFromString(peerIdStr);
+
+    // Register the address in the peer store
+    await (node.peerStore as any).merge(peerId, {
+      multiaddrs: [maddrStr],
+    }).catch(() => {
+      // peerStore.merge signature varies by libp2p version — try patch
+      return (node.peerStore as any).patch(peerId, { multiaddrs: [maddrStr] }).catch(() => {});
+    });
+
+    await Promise.race([
+      node.dial(peerId),
+      new Promise((_, rej) => setTimeout(() => rej(new Error("dial timeout")), timeoutMs)),
+    ]);
+    return true;
+  } catch {
+    return false;
+  }
+}

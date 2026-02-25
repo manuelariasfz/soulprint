@@ -994,7 +994,7 @@
         const d = await r.json();
 
         // Update live nodes to reflect real peer count
-        const peerCount = Math.max(d.known_peers || 0, d.p2p_peers || 0);
+        const peerCount = d.total_peers ?? Math.max(d.known_peers || 0, d.p2p_peers || 0);
         nodes[0].color   = "#7c6cf5";
         nodes[0].verified = true;
         // Mark peers as active

@@ -38,6 +38,7 @@ import {
   publishAttestationP2P,
   onAttestationReceived,
   getP2PStats,
+  dialP2PPeer,
   type SoulprintP2PNode,
 } from "./p2p.js";
 
@@ -612,6 +613,28 @@ async function handlePeerRegister(req: IncomingMessage, res: ServerResponse) {
 
   peers.push(url);
   savePeers();
+
+  // ── Auto-dial libp2p layer ──────────────────────────────────────────────────
+  // WSL2 / NAT: mDNS no funciona → al registrar un peer HTTP, intentamos
+  // conectar también vía libp2p usando sus multiaddrs del /info endpoint.
+  if (p2pNode) {
+    setImmediate(async () => {
+      try {
+        const infoRes = await fetch(`${url}/info`, { signal: AbortSignal.timeout(3_000) });
+        if (infoRes.ok) {
+          const info = await infoRes.json() as any;
+          const addrs: string[] = info?.p2p?.multiaddrs ?? [];
+          let dialed = false;
+          for (const ma of addrs) {
+            const ok = await dialP2PPeer(p2pNode!, ma);
+            if (ok) { console.log(`[peer] 🔗 P2P dial OK: ${ma}`); dialed = true; break; }
+          }
+          if (!dialed) console.log(`[peer] ℹ️  P2P dial failed for ${url} (mDNS fallback)`);
+        }
+      } catch { /* non-critical — HTTP gossip is the fallback */ }
+    });
+  }
+
   json(res, 200, { ok: true, peers: peers.length, protocol_hash: PROTOCOL_HASH });
 }
 
@@ -978,24 +1001,27 @@ export function startValidatorNode(port: number = PORT) {
     // GET /network/stats — stats públicas para la landing page
     if (cleanUrl === "/network/stats" && req.method === "GET") {
       const p2pStats = p2pNode ? getP2PStats(p2pNode) : null;
+      const httpPeers = peers.length;
+      const libp2pPeers = p2pStats?.peers ?? 0;
       return json(res, 200, {
-        node_did:           nodeKeypair.did.slice(0, 20) + "...",
-        version:            VERSION,
-        protocol_hash:      PROTOCOL_HASH.slice(0, 16) + "...",
+        node_did:            nodeKeypair.did.slice(0, 20) + "...",
+        version:             VERSION,
+        protocol_hash:       PROTOCOL_HASH.slice(0, 16) + "...",
         // identidades y reputación
         verified_identities: Object.keys(nullifiers).length,
         reputation_profiles: Object.keys(repStore).length,
-        // peers HTTP
-        known_peers:        peers.length,
-        // P2P libp2p
-        p2p_peers:          p2pStats?.peers        ?? 0,
-        p2p_pubsub_peers:   p2pStats?.pubsubPeers  ?? 0,
-        p2p_enabled:        !!p2pNode,
+        // peers — HTTP gossip (funciona en todos los entornos)
+        known_peers:         httpPeers,
+        // peers — libp2p P2P (requiere multicast/bootstrap; 0 en WSL2)
+        p2p_peers:           libp2pPeers,
+        p2p_pubsub_peers:    p2pStats?.pubsubPeers ?? 0,
+        p2p_enabled:         !!p2pNode,
+        // total = max de ambas capas (HTTP gossip es el piso mínimo garantizado)
+        total_peers:         Math.max(httpPeers, libp2pPeers),
         // estado general
-        uptime_ms:          Date.now() - (globalThis as any)._startTime || 0,
-        timestamp:          Date.now(),
-        // MCPRegistry
-        mcps_verified:      null,   // lazy — enriquecido abajo
+        uptime_ms:           Date.now() - ((globalThis as any)._startTime ?? Date.now()),
+        timestamp:           Date.now(),
+        mcps_verified:       null,
       });
     }
     if (cleanUrl === "/verify"               && req.method === "POST") return handleVerify(req, res, nodeKeypair, ip);

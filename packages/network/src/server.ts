@@ -12,6 +12,7 @@ import { createSoulprintP2PNode, MAINNET_BOOTSTRAP, stopP2PNode } from "./p2p.js
 // ─── Config ──────────────────────────────────────────────────────────────────
 const HTTP_PORT = parseInt(process.env.SOULPRINT_PORT     ?? "4888");
 const P2P_PORT  = parseInt(process.env.SOULPRINT_P2P_PORT ?? String(HTTP_PORT + 2000));
+(globalThis as any)._startTime = Date.now();
 
 // Bootstrap nodes: variables de entorno o mainnet predefinidos
 const bootstrapEnv = (process.env.SOULPRINT_BOOTSTRAP ?? "")
@@ -48,6 +49,39 @@ try {
 } catch (err: any) {
   console.warn(`⚠️  P2P no disponible — solo HTTP gossip activo`);
   console.warn(`   Error: ${err?.message ?? String(err)}\n`);
+}
+
+// ─── HTTP Bootstrap Peers (auto-registro) ─────────────────────────────────────
+// SOULPRINT_BOOTSTRAP_HTTP=http://node1:4888,http://node2:4888
+// Registra peers HTTP automáticamente al arrancar (útil en WSL2 / Docker / cloud)
+const httpBootstraps = (process.env.SOULPRINT_BOOTSTRAP_HTTP ?? "")
+  .split(",").map(s => s.trim()).filter(s => s.startsWith("http"));
+
+if (httpBootstraps.length > 0) {
+  console.log(`🔗 Bootstrap HTTP: ${httpBootstraps.length} peer(s) configurados`);
+  // Esperar 2s a que el HTTP server esté listo antes de registrar
+  setTimeout(async () => {
+    const PROTOCOL_HASH = process.env.SOULPRINT_PROTOCOL_HASH
+      ?? "dfe1ccca1270ec86f93308dc4b981bab1d6bd74bdcc334059f4380b407ca07ca";
+    for (const peerUrl of httpBootstraps) {
+      try {
+        const r = await fetch(`http://localhost:${HTTP_PORT}/peers/register`, {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({ url: peerUrl, protocol_hash: PROTOCOL_HASH }),
+          signal:  AbortSignal.timeout(15_000),
+        });
+        const d = await r.json() as any;
+        if (d.ok) {
+          console.log(`  ✅ Bootstrap peer registrado: ${peerUrl} (total peers: ${d.peers})`);
+        } else {
+          console.warn(`  ⚠️  Bootstrap peer rechazado: ${peerUrl} — ${d.error ?? d.reason ?? "?"}`);
+        }
+      } catch (e: any) {
+        console.warn(`  ❌ No se pudo conectar a bootstrap peer: ${peerUrl} — ${e.message}`);
+      }
+    }
+  }, 2_000);
 }
 
 // ─── Graceful shutdown ────────────────────────────────────────────────────────
