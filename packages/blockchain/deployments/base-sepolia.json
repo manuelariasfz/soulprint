@@ -16,7 +16,8 @@
     "ValidatorRegistry": "0xE9418dBF769082363e784de006008b1597F5EeE9",
     "GovernanceModule": "0x0d3bf889D2D353244f748042B48649Fa94AfF345",
     "GovernanceModuleV1": "0xE74Cd1Aa66541dF76e5a82a05F11f80B31FCe217",
-    "MCPRegistry": "0x59EA3c8f60ecbAe22B4c323A8dDc2b0BCd9D3C2a"
+    "MCPRegistry": "0x59EA3c8f60ecbAe22B4c323A8dDc2b0BCd9D3C2a",
+    "ProtocolThresholds": "0xD8f78d65b35806101672A49801b57F743f2D2ab1"
   },
   "protocolHash": "0xdfe1ccca1270ec86f93308dc4b981bab1d6bd74bdcc334059f4380b407ca07ca",
   "mcpRegistryAdmin": "0x0755A3001F488da00088838c4a068dF7f883ad87",

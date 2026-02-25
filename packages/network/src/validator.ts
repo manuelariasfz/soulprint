@@ -29,6 +29,12 @@ import {
   SoulprintBlockchainClient,
   loadBlockchainConfig,
 } from "./blockchain/blockchain-client.js";
+import {
+  thresholdsClient,
+  type ProtocolThresholds,
+  PROTOCOL_THRESHOLDS_ADDRESS,
+  PROTOCOL_THRESHOLDS_CHAIN,
+} from "./blockchain/protocol-thresholds-client.js";
 import { getCodeIntegrity, logCodeIntegrity, computeRuntimeHash } from "./code-integrity.js";
 import {
   isVerifiedOnChain, getMCPEntry, getVerifiedMCPEntries, getAllMCPEntries,
@@ -57,9 +63,57 @@ const MAX_BODY_BYTES       = 64 * 1024;
 const RATE_LIMIT_MS        = PROTOCOL.RATE_LIMIT_WINDOW_MS;
 const RATE_LIMIT_MAX       = PROTOCOL.RATE_LIMIT_MAX;
 const CLOCK_SKEW_MAX       = PROTOCOL.CLOCK_SKEW_MAX_SECONDS;
-const MIN_ATTESTER_SCORE   = PROTOCOL.MIN_ATTESTER_SCORE;  // 65 - inamovible
 const ATT_MAX_AGE_SECONDS  = PROTOCOL.ATT_MAX_AGE_SECONDS;
 const GOSSIP_TIMEOUT_MS    = PROTOCOL.GOSSIP_TIMEOUT_MS;
+
+// ── Thresholds cargados desde blockchain al arrancar (fallback: local) ────────
+// Usados en runtime — se pueden actualizar solo via superAdmin en el contrato.
+// El validador recarga cada 10 minutos automáticamente.
+let liveThresholds: {
+  SCORE_FLOOR:            number;
+  VERIFIED_SCORE_FLOOR:   number;
+  MIN_ATTESTER_SCORE:     number;
+  FACE_SIM_DOC_SELFIE:    number;
+  FACE_SIM_SELFIE_SELFIE: number;
+  DEFAULT_REPUTATION:     number;
+  IDENTITY_MAX:           number;
+  REPUTATION_MAX:         number;
+  source: "blockchain" | "local_fallback";
+} = {
+  SCORE_FLOOR:            PROTOCOL.SCORE_FLOOR           as number,
+  VERIFIED_SCORE_FLOOR:   PROTOCOL.VERIFIED_SCORE_FLOOR  as number,
+  MIN_ATTESTER_SCORE:     PROTOCOL.MIN_ATTESTER_SCORE    as number,
+  FACE_SIM_DOC_SELFIE:    PROTOCOL.FACE_SIM_DOC_SELFIE   as number,
+  FACE_SIM_SELFIE_SELFIE: PROTOCOL.FACE_SIM_SELFIE_SELFIE as number,
+  DEFAULT_REPUTATION:     PROTOCOL.DEFAULT_REPUTATION    as number,
+  IDENTITY_MAX:           PROTOCOL.IDENTITY_MAX          as number,
+  REPUTATION_MAX:         PROTOCOL.REPUTATION_MAX        as number,
+  source: "local_fallback",
+};
+
+export function getLiveThresholds() { return liveThresholds; }
+
+async function refreshThresholds() {
+  try {
+    thresholdsClient.invalidate();
+    const t = await thresholdsClient.load();
+    liveThresholds = {
+      SCORE_FLOOR:            t.SCORE_FLOOR,
+      VERIFIED_SCORE_FLOOR:   t.VERIFIED_SCORE_FLOOR,
+      MIN_ATTESTER_SCORE:     t.MIN_ATTESTER_SCORE,
+      FACE_SIM_DOC_SELFIE:    t.FACE_SIM_DOC_SELFIE   / 1000,
+      FACE_SIM_SELFIE_SELFIE: t.FACE_SIM_SELFIE_SELFIE / 1000,
+      DEFAULT_REPUTATION:     t.DEFAULT_REPUTATION,
+      IDENTITY_MAX:           t.IDENTITY_MAX,
+      REPUTATION_MAX:         t.REPUTATION_MAX,
+      source: t.source,
+    };
+    console.log(`[thresholds] ✅ Cargados desde ${t.source === "blockchain" ? "blockchain" : "fallback local"}`);
+    if (t.source === "blockchain") {
+      console.log(`[thresholds]    SCORE_FLOOR=${t.SCORE_FLOOR} VERIFIED_SCORE_FLOOR=${t.VERIFIED_SCORE_FLOOR} MIN_ATTESTER=${t.MIN_ATTESTER_SCORE}`);
+    }
+  } catch { /* usa los valores actuales */ }
+}
 
 // ── P2P Node (Phase 5) ────────────────────────────────────────────────────────
 let p2pNode: SoulprintP2PNode | null = null;
@@ -149,7 +203,7 @@ function getReputation(did: string): BotReputation {
  *
  * PROTOCOL ENFORCEMENT:
  * - Si el bot tiene DocumentVerified, su score total nunca puede caer por
- *   debajo de PROTOCOL.VERIFIED_SCORE_FLOOR (52) - inamovible.
+ *   debajo de liveThresholds.VERIFIED_SCORE_FLOOR (52) - inamovible.
  * - Anti-replay: la misma attestation (mismo issuer + timestamp + context)
  *   no se puede aplicar dos veces.
  *
@@ -183,12 +237,12 @@ function applyAttestation(att: BotAttestation): BotReputation {
 
   let finalRepScore = rep.score;
   if (hasDocument) {
-    const minRepForFloor = Math.max(0, PROTOCOL.VERIFIED_SCORE_FLOOR - identityFromStore);
+    const minRepForFloor = Math.max(0, liveThresholds.VERIFIED_SCORE_FLOOR - identityFromStore);
     finalRepScore = Math.max(finalRepScore, minRepForFloor);
     if (finalRepScore !== rep.score) {
       console.log(
         `[floor] Reputation clamped for ${att.target_did.slice(0,20)}...: ` +
-        `${rep.score} → ${finalRepScore} (VERIFIED_SCORE_FLOOR=${PROTOCOL.VERIFIED_SCORE_FLOOR})`
+        `${rep.score} → ${finalRepScore} (VERIFIED_SCORE_FLOOR=${liveThresholds.VERIFIED_SCORE_FLOOR})`
       );
     }
   }
@@ -328,7 +382,7 @@ function handleInfo(res: ServerResponse, nodeKeypair: SoulprintKeypair) {
  * Expone las constantes de protocolo inamovibles.
  * Los clientes y otros nodos usan este endpoint para:
  *  1. Verificar compatibilidad de versión antes de conectarse
- *  2. Obtener los valores actuales de SCORE_FLOOR y MIN_ATTESTER_SCORE
+ *  2. Obtener los valores actuales de SCORE_FLOOR y liveThresholds.MIN_ATTESTER_SCORE
  *  3. Validar que el nodo no ha sido modificado para bajar los thresholds
  */
 function handleProtocol(res: ServerResponse) {
@@ -339,9 +393,9 @@ function handleProtocol(res: ServerResponse) {
     // Si PROTOCOL fue modificado (aunque sea un valor), este hash cambia.
     protocol_hash:         PROTOCOL_HASH,
     // ── Score limits ────────────────────────────────────────────────────────
-    score_floor:           PROTOCOL.SCORE_FLOOR,
-    verified_score_floor:  PROTOCOL.VERIFIED_SCORE_FLOOR,
-    min_attester_score:    PROTOCOL.MIN_ATTESTER_SCORE,
+    score_floor:           liveThresholds.SCORE_FLOOR,
+    verified_score_floor:  liveThresholds.VERIFIED_SCORE_FLOOR,
+    min_attester_score:    liveThresholds.MIN_ATTESTER_SCORE,
     identity_max:          PROTOCOL.IDENTITY_MAX,
     reputation_max:        PROTOCOL.REPUTATION_MAX,
     max_score:             PROTOCOL.MAX_SCORE,
@@ -382,7 +436,7 @@ function handleGetReputation(res: ServerResponse, did: string) {
  * }
  *
  * Validaciones:
- *   1. service_spt tiene score >= MIN_ATTESTER_SCORE (solo servicios verificados)
+ *   1. service_spt tiene score >= liveThresholds.MIN_ATTESTER_SCORE (solo servicios verificados)
  *   2. service_spt.did == attestation.issuer_did (el emisor es quien dice ser)
  *   3. Firma Ed25519 de la attestation es válida
  *   4. timestamp no tiene más de ATT_MAX_AGE_SECONDS de antigüedad
@@ -452,10 +506,10 @@ async function handleAttest(req: IncomingMessage, res: ServerResponse, ip: strin
 
     const serviceTok = decodeToken(service_spt);
     if (!serviceTok) return json(res, 401, { error: "Invalid or expired service_spt" });
-    if (serviceTok.score < MIN_ATTESTER_SCORE) {
+    if (serviceTok.score < liveThresholds.MIN_ATTESTER_SCORE) {
       return json(res, 403, {
-        error:     `Service score too low (${serviceTok.score} < ${MIN_ATTESTER_SCORE})`,
-        required:  MIN_ATTESTER_SCORE,
+        error:     `Service score too low (${serviceTok.score} < ${liveThresholds.MIN_ATTESTER_SCORE})`,
+        required:  liveThresholds.MIN_ATTESTER_SCORE,
         got:       serviceTok.score,
       });
     }
@@ -803,7 +857,7 @@ async function handleTokenRenew(
         repEntry.hasDocumentVerified ?? false
       )
     : 0;
-  const scoreFloor  = PROTOCOL.VERIFIED_SCORE_FLOOR ?? 52;
+  const scoreFloor  = liveThresholds.VERIFIED_SCORE_FLOOR ?? 52;
 
   if (currentRep < scoreFloor) {
     return json(res, 403, {
@@ -860,6 +914,15 @@ export function startValidatorNode(port: number = PORT) {
   loadPeers();
   loadAudit();
   const nodeKeypair = loadOrCreateNodeKeypair();
+
+  // ── Cargar thresholds desde blockchain al arrancar ────────────────────────
+  // No bloqueante — el nodo arranca con valores locales y los actualiza async
+  refreshThresholds().then(() => {
+    console.log(`[thresholds] 📡 Fuente: ${liveThresholds.source} | SCORE_FLOOR=${liveThresholds.SCORE_FLOOR}`);
+    console.log(`[thresholds]    Contrato: ${PROTOCOL_THRESHOLDS_ADDRESS} (${PROTOCOL_THRESHOLDS_CHAIN})`);
+  });
+  // Refresco automático cada 10 minutos
+  setInterval(refreshThresholds, 10 * 60 * 1000);
 
   // ── Módulos de consenso P2P (sin EVM, sin gas fees) ──────────────────────
   const nullifierConsensus = new NullifierConsensus({
@@ -997,6 +1060,27 @@ export function startValidatorNode(port: number = PORT) {
 
     if (cleanUrl === "/info"                 && req.method === "GET")  return handleInfo(res, nodeKeypair);
     if (cleanUrl === "/protocol"             && req.method === "GET")  return handleProtocol(res);
+
+    // GET /protocol/thresholds — thresholds live desde blockchain (superAdmin-mutable)
+    if (cleanUrl === "/protocol/thresholds" && req.method === "GET") {
+      return json(res, 200, {
+        source:      liveThresholds.source,
+        contract:    PROTOCOL_THRESHOLDS_ADDRESS,
+        chain:       PROTOCOL_THRESHOLDS_CHAIN,
+        thresholds: {
+          SCORE_FLOOR:            liveThresholds.SCORE_FLOOR,
+          VERIFIED_SCORE_FLOOR:   liveThresholds.VERIFIED_SCORE_FLOOR,
+          MIN_ATTESTER_SCORE:     liveThresholds.MIN_ATTESTER_SCORE,
+          FACE_SIM_DOC_SELFIE:    liveThresholds.FACE_SIM_DOC_SELFIE,
+          FACE_SIM_SELFIE_SELFIE: liveThresholds.FACE_SIM_SELFIE_SELFIE,
+          DEFAULT_REPUTATION:     liveThresholds.DEFAULT_REPUTATION,
+          IDENTITY_MAX:           liveThresholds.IDENTITY_MAX,
+          REPUTATION_MAX:         liveThresholds.REPUTATION_MAX,
+        },
+        last_loaded: new Date(Date.now()).toISOString(),
+        note: "Solo el superAdmin del contrato puede modificar estos valores on-chain",
+      });
+    }
 
     // GET /network/stats — stats públicas para la landing page
     if (cleanUrl === "/network/stats" && req.method === "GET") {
