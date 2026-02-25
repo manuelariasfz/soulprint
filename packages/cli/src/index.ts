@@ -37,7 +37,7 @@ async function cmdVerifyMe() {
   const verbose  = args.includes("--verbose");
   const liveness = args.includes("--liveness");
   const noZKP    = args.includes("--no-zkp");
-  const minSim   = parseFloat(getArg("--min-sim") ?? "0.65");
+  const minSim   = parseFloat(getArg("--min-sim") ?? "0.35");  // PROTOCOL.FACE_SIM_DOC_SELFIE
 
   if (!selfie || !document) {
     console.error("❌ Uso: soulprint verify-me --selfie <foto.jpg> --document <cedula.jpg>");
@@ -252,7 +252,7 @@ COMANDOS:
     --verbose            Mostrar progreso detallado
     --liveness           Verificar que la selfie es real (no foto de foto)
     --no-zkp             Omitir ZK proof (más rápido, menor privacidad)
-    --min-sim <float>    Similitud mínima requerida (default: 0.65)
+    --min-sim <float>    Similitud mínima requerida (default: 0.35 — doc vs selfie)
 
   show                   Muestra tu token Soulprint actual
 

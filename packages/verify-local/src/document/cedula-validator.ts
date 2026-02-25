@@ -141,9 +141,12 @@ export function parseCedulaOCR(ocrText: string): DocumentValidationResult {
   if (/\bSEXO\s*[:\s]\s*M\b/.test(text) || /\bMASCULINO\b/.test(text)) sexo = "M";
   if (/\bSEXO\s*[:\s]\s*F\b/.test(text) || /\bFEMENINO\b/.test(text))  sexo = "F";
 
-  // ── Verificar que es una cédula colombiana ─────────────────────────────────
-  const esCedula = /COLOMBIA|REGISTRADURÍA|REPÚBLICA|CIUDADANÍA|C\.C\.|CÉDULA/i.test(text);
-  if (!esCedula) {
+  // ── Verificar que es un documento colombiano válido ───────────────────────
+  // Acepta: cédula, licencia de conducción y otros documentos con número CC
+  const esDocumentoColombia = /COLOMBIA|REGISTRADURÍA|REPÚBLICA|CIUDADANÍA|C\.C\.|CÉDULA|LICENCIA|CONDUCCIÓN|CONDUCCION|MOVILIDAD|BOGOTA|MEDELLIN|TRANSPORTE/i.test(text);
+  const tieneDatosValidos   = !!cedula_number && !!nombre && !!fecha_nacimiento;
+
+  if (!esDocumentoColombia && !tieneDatosValidos) {
     errors.push("El documento no parece ser una cédula colombiana");
   }
 
