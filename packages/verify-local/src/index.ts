@@ -49,8 +49,8 @@ export async function verifyIdentity(opts: VerificationOptions): Promise<Verific
 
   // ── PASO 1: Validar imágenes ───────────────────────────────────────────────
   log("Validando imágenes...");
-  const selfieCheck = await quickValidateImage(opts.selfiePhoto);
-  const docCheck    = await quickValidateImage(opts.documentPhoto);
+  const selfieCheck = await quickValidateImage(opts.selfiePhoto, { requireLandscape: false });
+  const docCheck    = await quickValidateImage(opts.documentPhoto, { requireLandscape: true });
   if (!selfieCheck.valid) { errors.push(`Selfie: ${selfieCheck.error}`); steps.image_check = "fail"; return { success: false, errors, steps }; }
   if (!docCheck.valid)    { errors.push(`Documento: ${docCheck.error}`); steps.image_check = "fail"; return { success: false, errors, steps }; }
   steps.image_check = "ok";

@@ -92,7 +92,10 @@ export async function matchFaceWithDocument(
       }
 
       try {
-        const result = JSON.parse(stdout.trim());
+        // InsightFace escribe logs de debug en stdout; la última línea JSON es la nuestra
+        const jsonLine = stdout.trim().split("\n").reverse().find(l => l.trim().startsWith("{"));
+        if (!jsonLine) throw new Error("no JSON line found");
+        const result = JSON.parse(jsonLine);
         resolve({
           match:      result.match ?? false,
           similarity: result.similarity ?? 0,

@@ -19,14 +19,18 @@ export async function ocrCedula(
   const lang = opts.lang ?? "spa";
 
   // Tesseract carga on-demand, se termina después de extraer
+  const tesseractOpts: any = {};
+  if (opts.verbose) {
+    tesseractOpts.logger = (m: any) =>
+      process.stderr.write(`[OCR] ${m.status} ${Math.round((m.progress ?? 0) * 100)}%\r`);
+  } else {
+    tesseractOpts.logger = () => {};  // silencioso — no undefined
+  }
+
   const { data: { text } } = await Tesseract.recognize(
     imagePath,
     lang,
-    {
-      logger: opts.verbose
-        ? (m: any) => process.stderr.write(`[OCR] ${m.status} ${Math.round((m.progress ?? 0) * 100)}%\r`)
-        : undefined,
-    }
+    tesseractOpts
   );
 
   if (opts.verbose) process.stderr.write("\n");
@@ -38,10 +42,11 @@ export async function ocrCedula(
  * Valida que la imagen parece ser una cédula antes de hacer OCR completo.
  * Revisión superficial de dimensiones y tamaño — no carga Tesseract.
  */
-export async function quickValidateImage(imagePath: string): Promise<{
+export async function quickValidateImage(imagePath: string, opts: { requireLandscape?: boolean } = {}): Promise<{
   valid: boolean;
   error?: string;
 }> {
+  const requireLandscape = opts.requireLandscape ?? true;
   try {
     // Dynamic import de sharp para no cargar si no es necesario
     const sharp = (await import("sharp")).default;
@@ -55,12 +60,12 @@ export async function quickValidateImage(imagePath: string): Promise<{
     const ratio = meta.width / meta.height;
     const isLandscape = meta.width > meta.height;
 
-    if (!isLandscape) {
+    if (requireLandscape && !isLandscape) {
       return { valid: false, error: "La imagen debe estar en horizontal (la cédula es apaisada)" };
     }
 
-    if (ratio < 1.2 || ratio > 2.0) {
-      return { valid: false, error: `Proporción de imagen inusual (${ratio.toFixed(2)}). Asegúrate de fotografiar solo la cédula` };
+    if (requireLandscape && (ratio < 0.9 || ratio > 2.5)) {
+      return { valid: false, error: `Proporción de imagen inusual (${ratio.toFixed(2)}). Asegúrate de fotografiar el documento completo` };
     }
 
     // Mínimo 400x250 para OCR confiable
