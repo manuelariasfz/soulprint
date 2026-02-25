@@ -23,10 +23,13 @@
 11. [BFT P2P Consensus (v0.3.1)](#bft-p2p-consensus-v031)
 12. [Challenge-Response Peer Integrity (v0.3.7)](#challenge-response-peer-integrity-v037)
 13. [SPT Auto-Renewal (v0.3.6)](#spt-auto-renewal-v036)
-12. [Multi-Country Registry](#multi-country-registry)
-13. [Security Threat Matrix](#security-threat-matrix)
-14. [Data Flow — Full Journey](#data-flow--full-journey)
-15. [Package Dependency Graph](#package-dependency-graph)
+14. [DPoP — Demonstrating Proof of Possession (v0.3.8)](#dpop--demonstrating-proof-of-possession-v038)
+15. [MCPRegistry — Verified MCP Ecosystem (v0.3.9)](#mcpregistry--verified-mcp-ecosystem-v039)
+16. [Multi-Country Registry](#multi-country-registry)
+17. [Security Threat Matrix](#security-threat-matrix)
+18. [Data Flow — Full Journey](#data-flow--full-journey)
+19. [Package Dependency Graph](#package-dependency-graph)
+20. [Appendix — File Structure](#appendix--file-structure)
 
 ---
 
@@ -963,6 +966,374 @@ Resultado: nodo listo con estado completo en < 5s
 
 ---
 
+## Challenge-Response Peer Integrity (v0.3.7)
+
+### Problema
+Un peer malicioso puede implementar un nodo que:
+- Siempre devuelve `true` en verificaciones ZK (ZK bypass)
+- Nunca verifica nada y cachea respuestas
+- Se impersona como un nodo legítimo
+
+### Solución: Challenge-Response con vector ZK real
+
+```
+Challenger                          Peer
+    │                                 │
+    │── POST /challenge ─────────────►│
+    │   { challenge_id, nonce,         │
+    │     issued_at }                  │
+    │                                 │── verifyProof(VALID_VECTOR) → debe ser true
+    │                                 │── verifyProof(MUTADO_nonce) → debe ser false
+    │                                 │── Ed25519 sign(ambos resultados)
+    │◄── { valid_ok, invalid_ok, ────│
+    │      signature, did }           │
+    │                                 │
+    │── verifyChallengeResponse() ────►
+    │   ✓ valid_ok == true
+    │   ✓ invalid_ok == false
+    │   ✓ Ed25519 signature válida
+    │   ✓ nonce no visto antes (anti-replay)
+    │   ✓ TTL < 30s
+```
+
+**ASCII:**
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                   Challenge-Response Flow                        │
+│                                                                  │
+│  Challenger        Soulprint Network         Peer Validator      │
+│      │                                            │              │
+│      │──── POST /challenge ──────────────────────►│              │
+│      │     { challenge_id, nonce, issued_at }     │              │
+│      │                                            │              │
+│      │                                 ┌──────────┴──────────┐  │
+│      │                                 │ verifyProof(VALID)   │  │
+│      │                                 │  → must be TRUE      │  │
+│      │                                 │ verifyProof(MUTADO)  │  │
+│      │                                 │  → must be FALSE     │  │
+│      │                                 │ Ed25519 sign(both)   │  │
+│      │                                 └──────────┬──────────┘  │
+│      │                                            │              │
+│      │◄─── { valid_ok, invalid_ok, sig, did } ───│              │
+│      │                                            │              │
+│  ┌───┴────────────────────────────────────┐       │              │
+│  │ verifyChallengeResponse()               │       │              │
+│  │  ✓ valid_ok === true                   │       │              │
+│  │  ✓ invalid_ok === false                │       │              │
+│  │  ✓ Ed25519 signature válida            │       │              │
+│  │  ✓ nonce único (anti-replay)           │       │              │
+│  │  ✓ TTL < 30s                           │       │              │
+│  └────────────────────────────────────────┘       │              │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### PROTOCOL_CHALLENGE_VECTOR (inmutable)
+```typescript
+// hardcoded en packages/network/src/peer-challenge.ts
+// inputs: cedula=1020461234, fecha=19990315, face_key=7777..., salt=42
+// nullifier: 0x01f045114d0735efb880c7410a220c6bb4f6fd79290bcace37061dbee8fd5df9
+// ⚠️ Cambiar este vector rompe la compatibilidad P2P
+//    Requiere governance proposal (70% supermajority + 48h timelock)
+```
+
+### Matriz de ataques
+
+| Ataque | Cómo se detecta |
+|---|---|
+| ZK bypass (siempre true) | `invalid_ok` no es false → falla |
+| ZK roto (siempre false) | `valid_ok` no es true → falla |
+| Replay de challenge viejo | nonce ya visto en `NonceStore` → falla |
+| Impersonación (firma falsa) | Ed25519 verify contra `did` del peer → falla |
+| Timeout / caching | `issued_at + 30s < now` → falla |
+
+---
+
+## SPT Auto-Renewal (v0.3.6)
+
+### Problema
+Los SPT expiran cada 24h. Sin renovación automática, el usuario queda sin acceso.
+
+### Ventanas de renovación
+```
+Timeline de un SPT:
+
+  issued_at                         expires_at
+      │                                  │
+      ├──────────────────────────────────┤
+      │         token válido             │
+      │                      ┌───────────┤
+      │                      │ PRE-EMPTIVE│  < 1h restante
+      │                      │ zona verde │  renovar antes de expirar
+      │                      └───────────┤
+      │                                  │
+      │                                  ├──────────────────────┐
+      │                                  │     GRACE WINDOW     │  < 7 días expirado
+      │                                  │     sigue renovando  │
+      │                                  └──────────────────────┤
+      │                                                         │
+      │                                               HARD LIMIT│ No renewal
+```
+
+### Endpoint `POST /token/renew`
+```
+Guards:
+  ✓ DID registrado en SoulprintRegistry
+  ✓ Score >= VERIFIED_SCORE_FLOOR (52)
+  ✓ Cooldown: 60s por DID (anti-spam)
+  ✓ Dentro de ventana: pre-emptive (<1h) ó grace (<7d)
+
+Response:
+  { token: "<nuevo SPT>", renewed: true, expires_at: "..." }
+```
+
+### Integración en SDKs
+```typescript
+// soulprint-express — automático en cada request
+app.use(soulprint({ minScore: 65 }));
+// Si el token se renovó: header X-Soulprint-Token-Renewed: <nuevo_token>
+
+// soulprint-mcp — automático en cada tool call
+// Si se renovó: context.meta["x-soulprint-token-renewed"]
+```
+
+### Constantes (fuera del PROTOCOL_HASH — operacionales)
+```
+TOKEN_LIFETIME_SECONDS     = 86400   (24h)
+TOKEN_RENEW_PREEMPTIVE_SECS = 3600   (1h antes de expirar)
+TOKEN_RENEW_GRACE_SECS     = 604800  (7 días post-expiración)
+TOKEN_RENEW_COOLDOWN_SECS  = 60      (1 min entre renovaciones)
+```
+
+---
+
+## DPoP — Demonstrating Proof of Possession (v0.3.8)
+
+### Problema
+El SPT es un bearer token. Si alguien lo roba, puede usarlo hasta que expire (24h).
+
+### Solución
+Cada request lleva un **proof firmado con la llave privada** del usuario. Sin la llave, el token robado es inútil.
+
+```
+Cliente                          Servidor
+    │                                │
+    │   X-Soulprint: <SPT>           │
+    │   X-Soulprint-Proof: <DPoP>    │
+    │                                │
+    │ DPoP payload (firmado Ed25519):│
+    │ {                              │
+    │   typ:      "soulprint-dpop",  │
+    │   method:   "POST",            │── método HTTP firmado
+    │   url:      "https://...",     │── URL firmada
+    │   nonce:    "a3f1b2...",       │── único por request
+    │   iat:      1740000000,        │── expira en 5 min
+    │   spt_hash: sha256(SPT)        │── vinculado a ESTE token
+    │ }                              │
+    │                                │── verifyDPoP(proof, spt, method, url)
+    │                                │   ✓ firma Ed25519 válida
+    │                                │   ✓ nonce no visto (NonceStore)
+    │                                │   ✓ spt_hash coincide
+    │                                │   ✓ method y url coinciden
+    │                                │   ✓ iat < 5min ago
+```
+
+**ASCII:**
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                        DPoP Security Layer                        │
+│                                                                   │
+│  Sin DPoP (antes):                                                │
+│    Atacante roba SPT ──► envía request ──► ACCESO ✗              │
+│                                                                   │
+│  Con DPoP (v0.3.8):                                               │
+│    Atacante roba SPT ──► envía request sin proof ──► 401 ✓       │
+│    Atacante roba SPT ──► forja proof sin llave ──► 401 ✓         │
+│    Atacante roba SPT+proof ──► replay ──► 401 (nonce usado) ✓    │
+│                                                                   │
+│  SPT          = identidad (quién eres)                            │
+│  DPoP proof   = posesión (tienes la llave privada ahora)          │
+│                                                                   │
+│  Juntos       = identidad + prueba de posesión en tiempo real     │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+### Ataques bloqueados (8)
+
+| Ataque | Defensa |
+|---|---|
+| Robo del SPT | Firma Ed25519 vinculada al DID del token |
+| Replay (mismo proof 2 veces) | Nonce quemado en `NonceStore` tras primer uso |
+| MITM de URL | URL firmada en el payload |
+| MITM de método HTTP | Method firmado |
+| Proof de otro usuario | `spt_hash = sha256(spt)` — vinculado a UN token específico |
+| DID mismatch | `proof.did` debe coincidir con `spt.did` |
+| Proof expirado | TTL de 300s (5 min) |
+| Proof malformado | Deserialización robusta — devuelve false |
+
+### Uso en SDKs
+
+```typescript
+// ── Generar proof (cliente) ───────────────────────────────────────
+import { signDPoP, serializeDPoP } from "soulprint-core";
+
+const proof = signDPoP(privateKey, myDid, "POST", url, mySpt);
+// Headers del request:
+headers["X-Soulprint"]       = mySpt;
+headers["X-Soulprint-Proof"] = serializeDPoP(proof);
+
+// ── Activar en Express (servidor) ────────────────────────────────
+import { soulprint } from "soulprint-express";
+
+// Soft mode (verifica si viene el header, lo ignora si no)
+app.use(soulprint({ minScore: 65 }));
+
+// Strict mode (rechaza si no hay proof)
+app.use(soulprint({ minScore: 65, requireDPoP: true }));
+// → 401 { error: "dpop_required" } si falta el header
+
+// ── Activar en MCP ────────────────────────────────────────────────
+import { requireSoulprint } from "soulprint-mcp";
+
+server.tool("mi-tool", schema, requireSoulprint({ requireDPoP: true }, handler));
+```
+
+### Estructura del proof
+```typescript
+interface DPoPProof {
+  payload: {
+    typ:      "soulprint-dpop";
+    method:   string;        // "POST", "GET", ...
+    url:      string;        // URL exacta del endpoint
+    nonce:    string;        // hex(16 random bytes) — único
+    iat:      number;        // Unix timestamp (segundos)
+    spt_hash: string;        // sha256(spt) — hex
+  };
+  signature: string;         // Ed25519 hex(64 bytes)
+  did:       string;         // "did:key:z6Mk..."
+}
+// Serializado: base64url(JSON.stringify(proof))
+// Header: X-Soulprint-Proof: <serialized>
+```
+
+---
+
+## MCPRegistry — Verified MCP Ecosystem (v0.3.9)
+
+### Problema
+¿Cómo sabe un agente AI si el MCP server al que se conecta es legítimo?  
+Sin verificación, cualquier servidor puede reclamar ser "mcp-colombia-hub" u otro conocido.
+
+### Arquitectura
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                    MCPRegistry Ecosystem                          │
+│                                                                   │
+│  ┌─────────────────────────────────────────────┐                 │
+│  │          MCPRegistry.sol (Base Sepolia)      │                 │
+│  │   0x59EA3c8f60ecbAe22B4c323A8dDc2b0BCd9D3C2a│                 │
+│  │                                             │                 │
+│  │  superAdmin: 0x0755...  (Soulprint wallet)  │                 │
+│  │                                             │                 │
+│  │  mcp_address → { name, url, category,       │                 │
+│  │                  verifiedAt, revokedAt }     │                 │
+│  └──────────────────┬──────────────────────────┘                 │
+│                     │ on-chain (inmutable)                        │
+│           ┌─────────┴──────────┐                                  │
+│           │                    │                                  │
+│  ┌────────▼────────┐  ┌───────▼────────────────┐                 │
+│  │ Soulprint       │  │ MCP Colombia Hub        │                 │
+│  │ validator.ts    │  │ (u otro MCP)            │                 │
+│  │                 │  │                         │                 │
+│  │ 🔐 Admin:       │  │ mcp_estado()            │                 │
+│  │ POST /admin/    │  │ mcp_lista_verificados() │                 │
+│  │   mcp/verify    │  │ mcp_registrar()         │                 │
+│  │   mcp/revoke    │  │                         │                 │
+│  │                 │  │ (solo lectura — no admin)│                │
+│  │ 📖 Público:     │  └─────────────────────────┘                 │
+│  │ GET /mcps/      │                                              │
+│  │   verified      │                                              │
+│  │   all           │                                              │
+│  │   status/:addr  │                                              │
+│  └─────────────────┘                                              │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+### Flujo de verificación de un MCP nuevo
+
+```
+Paso 1 — Registro (permissionless):
+  Dev → POST /admin/mcp/register
+    { ownerKey, address, name, url, category }
+  → Tx on-chain: mcps[address] = { ..., verifiedAt: 0 }
+
+Paso 2 — Verificación (solo superAdmin):
+  Soulprint Admin → POST /admin/mcp/verify
+    Authorization: Bearer ADMIN_TOKEN
+    { address }
+  → Tx on-chain: mcps[address].verifiedAt = block.timestamp
+  → Evento: MCPVerified(address, name, admin)
+
+Paso 3 — Consulta (cualquiera):
+  GET /mcps/verified  →  lista pública
+  GET /mcps/status/0x...  →  { verified: true, badge: "✅ VERIFIED by Soulprint" }
+  isVerified(address)  →  bool  (lectura directa del contrato)
+
+Paso 4 — Revocación (solo superAdmin, si aplica):
+  POST /admin/mcp/revoke
+    { address, reason }  ← razón queda grabada on-chain forever
+```
+
+### Separación de responsabilidades
+
+```
+Soulprint protocol      = quien otorga y revoca verificación
+   └── validator.ts     = endpoints admin (POST /admin/mcp/*)
+
+mcp-colombia-hub        = uno de los MCPs verificados
+   └── tools MCP        = solo lectura (mcp_estado, mcp_lista_verificados)
+   └── NO tiene poder admin sobre otros MCPs
+
+MCPRegistry.sol         = estado on-chain (inmutable, auditable)
+   └── superAdmin       = wallet Soulprint (0x0755...)
+   └── proposeSuperAdmin/acceptSuperAdmin = transferencia 2 pasos (segura)
+```
+
+### Doble protección del admin
+
+```
+Request HTTP → ADMIN_TOKEN (Bearer header)  → autentica la petición
+On-chain tx  → ADMIN_PRIVATE_KEY            → firma la transacción
+
+Sin ADMIN_TOKEN:  HTTP 401 — antes de llegar al contrato
+Sin ADMIN_KEY:    HTTP 503 — configuración faltante
+Con ambos:        tx firmada → Base Sepolia → estado inmutable
+```
+
+### Contrato MCPRegistry.sol — ABI resumido
+
+```solidity
+// Lectura pública
+function isVerified(address mcpAddress) view returns (bool)
+function totalMCPs() view returns (uint256)
+function getAllMCPs() view returns (address[])
+function getVerifiedMCPs() view returns (address[], MCPEntry[])
+
+// Escritura permissionless
+function registerMCP(address, name, url, did, category, description)
+
+// Escritura solo admin
+function verify(address mcpAddress)
+function revoke(address mcpAddress, string reason)
+function updateMCP(address, newUrl, newDid, newDescription)
+
+// Transferencia segura de admin (2 pasos)
+function proposeSuperAdmin(address newAdmin)
+function acceptSuperAdmin()  // solo el pending admin puede llamar
+```
+
+---
+
 ## Multi-Country Registry
 
 ```
@@ -1002,6 +1373,14 @@ packages/verify-local/src/document/
 | **Gossip poisoning** | Mensajes falsos en red | AES-256-GCM + PROTOCOL_HASH — nodo diferente no puede descifrar |
 | **Nullifier replay** | Reusar COMMIT antiguo | `nullifiers.has(x)` — commit idempotente, 2da aplicación no-op |
 | **Farming P2P** | Mismo issuer atestigua en bucle | Cooldown 24h on-node + cap 7/semana en AttestationConsensus |
+| **SPT theft** | Robo del bearer token | DPoP: proof firmado con llave privada por request |
+| **DPoP replay** | Reutilizar proof de otro request | Nonce único quemado en NonceStore tras primer uso |
+| **DPoP MITM URL** | Proof generado para otra URL | URL firmada en payload DPoP |
+| **Peer ZK bypass** | Peer que siempre devuelve true | Challenge-Response: prueba inválida mutada debe dar false |
+| **Peer impersonation** | Peer clona DID de otro nodo | Ed25519 signature verifica contra la clave pública del DID |
+| **MCP falso** | Servidor MCP no verificado | MCPRegistry on-chain: isVerified() antes de usar el MCP |
+| **Admin MCPRegistry** | Alguien roba ADMIN_TOKEN | Doble capa: ADMIN_TOKEN (HTTP) + ADMIN_PRIVATE_KEY (tx on-chain) |
+| **MCP key compromise** | Roba ADMIN_PRIVATE_KEY | proposeSuperAdmin + acceptSuperAdmin — transferencia 2 pasos |
 
 ---
 
@@ -1112,36 +1491,96 @@ soulprint-network (solo, libp2p deps):
 ```
 soulprint/
 ├── packages/
-│   ├── cli/src/commands/        verify-me · show · renew · node · install-deps
 │   ├── core/src/
 │   │   ├── did.ts               DID generation (Ed25519)
 │   │   ├── token.ts             SPT create / decode / verify
+│   │   ├── token-renewal.ts     needsRenewal · autoRenew · renewToken  [v0.3.6]
+│   │   ├── dpop.ts              signDPoP · verifyDPoP · NonceStore      [v0.3.8]
 │   │   ├── attestation.ts       BotAttestation create / verify
 │   │   ├── reputation.ts        computeReputation · defaultReputation
-│   │   └── score.ts             calculateTotalScore · CREDENTIAL_WEIGHTS
+│   │   ├── score.ts             calculateTotalScore · CREDENTIAL_WEIGHTS
+│   │   ├── protocol.ts          PROTOCOL constants + PROTOCOL_HASH
+│   │   └── index.ts             re-exports públicos
+│   │
 │   ├── verify-local/src/
 │   │   ├── face/                face_match.py (InsightFace on-demand)
 │   │   └── document/countries/  CO MX AR VE PE BR CL
-│   ├── zkp/
+│   │
+│   ├── zkp/src/
+│   │   ├── prover.ts            verifyProof · generateProof  (import * as snarkjs fix)
 │   │   ├── circuits/            soulprint_identity.circom (844 constraints)
 │   │   └── keys/                *.zkey · verification_key.json
+│   │
 │   ├── network/src/
-│   │   ├── server.ts            Entrypoint: arranca HTTP + P2P en mismo proceso
-│   │   ├── validator.ts         HTTP server + setP2PNode() bridge + gossip dual-channel
-│   │   └── p2p.ts               libp2p node (Fase 5): KadDHT + GossipSub + mDNS
-│   ├── mcp/src/middleware.ts    soulprint() MCP plugin
-│   └── express/src/middleware.ts soulprint() Express plugin
+│   │   ├── server.ts            Entrypoint: HTTP + P2P en mismo proceso
+│   │   ├── validator.ts         HTTP server completo (todos los endpoints)
+│   │   │                          Core: /verify · /token/renew · /challenge · /health
+│   │   │                          Reputation: /reputation/attest · /reputation/:did
+│   │   │                          Credentials: /credentials/email · /phone · /github
+│   │   │                          Consensus: /consensus/state · /consensus/message
+│   │   │                          Governance: /governance/propose · /vote · /execute
+│   │   │                          MCPRegistry: /mcps/verified · /admin/mcp/*
+│   │   ├── p2p.ts               libp2p (KadDHT + GossipSub + mDNS)
+│   │   ├── peer-challenge.ts    Challenge-Response peer integrity  [v0.3.7]
+│   │   │                          PROTOCOL_CHALLENGE_VECTOR (inmutable)
+│   │   │                          buildChallenge · buildChallengeResponse
+│   │   │                          verifyChallengeResponse · verifyPeerBehavior
+│   │   ├── mcp-registry-client.ts  Cliente ethers.js para MCPRegistry.sol  [v0.3.9]
+│   │   │                          isVerifiedOnChain · getMCPEntry
+│   │   │                          verifyMCPOnChain · revokeMCPOnChain
+│   │   ├── code-integrity.ts    SHA-256 de src/*.ts — getCodeIntegrity()
+│   │   ├── consensus/           BFT NullifierConsensus + AttestationConsensus
+│   │   ├── credentials/         email · phone · github validators
+│   │   └── blockchain/
+│   │       ├── blockchain-client.ts   SoulprintBlockchainClient (ethers.js)
+│   │       └── blockchain-anchor.ts   Async P2P→blockchain bridge
+│   │
+│   ├── express/src/
+│   │   └── index.ts             soulprint() middleware
+│   │                              requireDPoP option + X-Soulprint-Token-Renewed header
+│   │
+│   ├── mcp/src/
+│   │   └── index.ts             requireSoulprint() MCP middleware
+│   │                              requireDPoP option + context.meta renewal
+│   │
+│   └── blockchain/
+│       ├── contracts/
+│       │   ├── SoulprintRegistry.sol    Registro de identidades ZK
+│       │   ├── AttestationLedger.sol    Attestations on-chain
+│       │   ├── ValidatorRegistry.sol    Nodos validadores
+│       │   ├── GovernanceModule.sol     Upgrading (70% + 48h timelock)
+│       │   ├── Groth16Verifier.sol      Verificador ZK real (generado de .zkey)
+│       │   ├── MCPRegistry.sol          Registro de MCPs verificados  [v0.3.9]
+│       │   └── ProtocolConstants.sol    PROTOCOL_HASH on-chain
+│       ├── scripts/
+│       │   ├── deploy.ts                Deploy inicial
+│       │   ├── deploy-v2.ts             Deploy con admin bloqueado + verifier real
+│       │   ├── deploy-governance.ts     GovernanceModule
+│       │   └── deploy-mcp-registry.ts   MCPRegistry  [v0.3.9]
+│       └── deployments/
+│           └── base-sepolia.json        Addresses de todos los contratos
+│
 ├── tests/
 │   ├── suite.js                 104 unit + integration
-│   ├── pentest-node.js          15 HTTP pen tests
-│   ├── zk-tests.js              16 ZK proof tests
-│   └── p2p-tests.mjs            22 P2P tests (Fase 5): conectividad, GossipSub, 3 nodos, burst
-├── specs/SIP-v0.1.md            Formal protocol spec
-├── website/index.html           Landing page (GitHub Pages)
+│   ├── consensus-tests.mjs      32 BFT consensus tests
+│   ├── blockchain-e2e-tests.mjs 33 blockchain E2E tests
+│   ├── governance-tests.mjs     33 governance tests
+│   ├── fix-verification-tests.mjs 43 pen tests (Groth16, admin lock, code hash)
+│   ├── auto-renew-tests.mjs     17 SPT auto-renewal tests          [v0.3.6]
+│   ├── challenge-tests.mjs      21 challenge-response tests (~60s)  [v0.3.7]
+│   └── dpop-tests.mjs           20 DPoP tests                       [v0.3.8]
+│                                Total: 303 tests ✅
+│
+├── specs/SIP-v0.1.md            Soulprint Identity Protocol spec
+├── website/
+│   ├── index.html               Landing page (soulprint.digital)
+│   └── docs/
+│       ├── api.html             Referencia completa de endpoints
+│       └── validator.html       Guía de operación del nodo
 ├── ARCHITECTURE.md              ← este archivo
 └── README.md
 ```
 
 ---
 
-*v0.2.0 — Febrero 2026 · https://github.com/manuelariasfz/soulprint*
+*v0.3.9 — Febrero 2026 · https://github.com/manuelariasfz/soulprint*

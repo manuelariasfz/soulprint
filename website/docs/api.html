@@ -260,7 +260,7 @@ Content-Type: application/json
 
     <!-- POST /token/renew -->
     <h2 id="post-token-renew"><code>POST /token/renew</code> <span style="font-size:0.7em;background:#4ade80;color:#000;padding:2px 8px;border-radius:10px">v0.3.6</span></h2>
-    <p>Auto-renew an SPT that is near expiry (< 1h remaining) or recently expired (grace window: 7 days).</p>
+    <p>Auto-renew an SPT that is near expiry (&lt; 1h remaining) or recently expired (grace window: 7 days).</p>
     <pre><code>POST /token/renew
 Content-Type: application/json
 
@@ -276,10 +276,155 @@ Content-Type: application/json
   "node_did": "did:key:z6Mk..."
 }
 
-// Response 400 — token still valid (> 1h remaining), includes renew_after
-// Response 401 — token expired > 7 days (full re-verification required)
+// Response 400 — token still valid (&gt; 1h remaining), includes renew_after
+// Response 401 — token expired &gt; 7 days (full re-verification required)
 // Response 403 — DID not registered or score below floor
 // Response 429 — cooldown (60s between renewals per DID)</code></pre>
+
+    <!-- DPoP -->
+    <h2 id="dpop"><code>DPoP — Demonstrating Proof of Possession</code> <span style="font-size:0.7em;background:#f59e0b;color:#000;padding:2px 8px;border-radius:10px">v0.3.8</span></h2>
+    <p>Prevents stolen SPT abuse. Every request must carry a fresh signed proof. Without the private key, a stolen token is useless.</p>
+    <p><strong>Header:</strong> <code>X-Soulprint-Proof: &lt;base64url-proof&gt;</code></p>
+    <pre><code>// Proof payload (Ed25519 signed):
+{
+  "typ":      "soulprint-dpop",
+  "method":   "POST",             // HTTP method — must match request
+  "url":      "https://...",      // exact URL — must match request
+  "nonce":    "a3f1b2...",        // 16 random bytes hex — unique per request
+  "iat":      1740000000,         // Unix timestamp — expires in 300s
+  "spt_hash": "sha256(spt)"       // bound to this specific token
+}
+// Serialized: base64url(JSON.stringify({ payload, signature, did }))
+
+// Generate (client-side):
+import { signDPoP, serializeDPoP } from "soulprint-core";
+const proof  = signDPoP(privateKey, did, "POST", url, myToken);
+const header = serializeDPoP(proof);
+
+// Enable on server (soulprint-express):
+app.use(soulprint({ minScore: 65, requireDPoP: true }));
+// → 401 { error: "dpop_required" } if proof header is missing
+
+// Enable on MCP (soulprint-mcp):
+server.use(soulprint({ minScore: 65, requireDPoP: true }));
+
+// Attacks blocked: token theft · replay · URL MITM · method MITM ·
+//   DID mismatch · spt_hash mismatch · expired proof · malformed proof</code></pre>
+
+    <!-- MCPRegistry -->
+    <h2 id="mcpregistry"><code>MCPRegistry — On-Chain Verified MCPs</code> <span style="font-size:0.7em;background:#06b6d4;color:#fff;padding:2px 8px;border-radius:10px">v0.3.9</span></h2>
+    <p>Public registry of verified MCP servers on Base Sepolia. Agents can verify a server is legitimate before trusting it.</p>
+    <p><strong>Contract:</strong> <code>0x59EA3c8f60ecbAe22B4c323A8dDc2b0BCd9D3C2a</code> (Base Sepolia)</p>
+
+    <h3><span class="method method-get">GET</span> /mcps/verified</h3>
+    <p>List all currently verified MCPs. Public, no authentication required.</p>
+    <pre><code>GET /mcps/verified
+
+// Response 200
+{
+  "total": 1,
+  "registry": {
+    "contract":   "0x59EA3c8f60ecbAe22B4c323A8dDc2b0BCd9D3C2a",
+    "network":    "Base Sepolia (chainId: 84532)",
+    "superAdmin": "0x0755...",
+    "totalMCPs":  1,
+    "explorer":   "https://sepolia.basescan.org/address/0x59EA..."
+  },
+  "mcps": [
+    {
+      "address":     "0x...",
+      "name":        "MCP Colombia Hub",
+      "url":         "https://npmjs.com/package/mcp-colombia-hub",
+      "category":    "general",
+      "description": "...",
+      "verified_at": "2026-02-25T01:02:24.000Z",
+      "badge":       "✅ VERIFIED"
+    }
+  ]
+}</code></pre>
+
+    <h3><span class="method method-get">GET</span> /mcps/all</h3>
+    <p>List all registered MCPs (verified + pending). Public.</p>
+
+    <h3><span class="method method-get">GET</span> /mcps/status/:address</h3>
+    <p>Check verification status of a specific MCP address.</p>
+    <pre><code>GET /mcps/status/0x0755A3001F488da00088838c4a068dF7f883ad87
+
+// Response 200
+{
+  "address":      "0x...",
+  "name":         "MCP Colombia Hub",
+  "registered":   true,
+  "verified":     true,
+  "registered_at": "2026-02-25T01:02:22.000Z",
+  "verified_at":  "2026-02-25T01:02:24.000Z",
+  "revoked_at":   null,
+  "badge":        "✅ VERIFIED by Soulprint"
+}
+
+// Response 404 — not registered
+{ "address": "0x...", "registered": false, "verified": false }</code></pre>
+
+    <h3><span class="method method-post">POST</span> /admin/mcp/register <span style="font-size:0.8em;color:#888">(permissionless)</span></h3>
+    <p>Register a new MCP on-chain. Anyone can register; verification requires admin approval.</p>
+    <pre><code>POST /admin/mcp/register
+Content-Type: application/json
+
+{
+  "ownerKey":    "0x&lt;private_key&gt;",   // signs the on-chain tx
+  "address":     "0x&lt;mcp_address&gt;",
+  "name":        "My Finance MCP",
+  "url":         "https://my-mcp.example.com",
+  "category":    "finance",            // finance|travel|jobs|ecommerce|general
+  "description": "Provides Colombian financial data"
+}
+
+// Response 201
+{
+  "address":   "0x...",
+  "name":      "My Finance MCP",
+  "txHash":    "0x...",
+  "explorer":  "https://sepolia.basescan.org/tx/0x...",
+  "message":   "✅ MCP registered. Contact Soulprint admin to verify.",
+  "next_step": "POST /admin/mcp/verify with Bearer ADMIN_TOKEN"
+}</code></pre>
+
+    <h3><span class="method method-post">POST</span> /admin/mcp/verify <span style="font-size:0.8em;color:#e63946">🔐 Admin only</span></h3>
+    <p>Mark an MCP as verified on-chain. Requires <code>Authorization: Bearer ADMIN_TOKEN</code> + server-side <code>ADMIN_PRIVATE_KEY</code>.</p>
+    <pre><code>POST /admin/mcp/verify
+Authorization: Bearer &lt;ADMIN_TOKEN&gt;
+Content-Type: application/json
+
+{ "address": "0x&lt;mcp_address&gt;" }
+
+// Response 200
+{
+  "address":  "0x...",
+  "verified": true,
+  "txHash":   "0x...",
+  "explorer": "https://sepolia.basescan.org/tx/0x...",
+  "message":  "✅ MCP 0x... verified on-chain by Soulprint"
+}
+
+// Response 401 — missing or wrong ADMIN_TOKEN
+// Response 503 — ADMIN_PRIVATE_KEY not configured on this node</code></pre>
+
+    <h3><span class="method method-post">POST</span> /admin/mcp/revoke <span style="font-size:0.8em;color:#e63946">🔐 Admin only</span></h3>
+    <p>Revoke an MCP's verification. The reason is stored permanently on-chain.</p>
+    <pre><code>POST /admin/mcp/revoke
+Authorization: Bearer &lt;ADMIN_TOKEN&gt;
+Content-Type: application/json
+
+{ "address": "0x&lt;mcp_address&gt;", "reason": "Malicious behavior detected" }
+
+// Response 200
+{
+  "address": "0x...",
+  "revoked": true,
+  "reason":  "Malicious behavior detected",
+  "txHash":  "0x...",
+  "message": "🚫 MCP 0x... revoked. Reason: 'Malicious behavior detected'"
+}</code></pre>
 
 </main>
 </div>

@@ -7,7 +7,7 @@ Soulprint lets any AI bot prove there's a verified human behind it — without r
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [[![npm soulprint](https://img.shields.io/npm/v/soulprint?label=soulprint&color=blue)](https://npmjs.com/package/soulprint)
 [![npm soulprint-mcp](https://img.shields.io/npm/v/soulprint-mcp?label=soulprint-mcp&color=purple)](https://npmjs.com/package/soulprint-mcp)
-![Phase](https://img.shields.io/badge/v0.3.7-phases%201--5%20%2B%20hardened-brightgreen-brightgreen)]()
+![Phase](https://img.shields.io/badge/v0.3.9-phases%201--5%20%2B%20hardened-brightgreen-brightgreen)()
 [![npm soulprint-network](https://img.shields.io/npm/v/soulprint-network?label=soulprint-network&color=7c6cf5)](https://npmjs.com/package/soulprint-network)[![Built with](https://img.shields.io/badge/built%20with-Circom%20%2B%20snarkjs%20%2B%20InsightFace-purple)]()
 
 ---
@@ -118,6 +118,32 @@ The client must include the SPT in capabilities:
 
 Or in the HTTP header: `X-Soulprint: <token>`
 
+### With DPoP — prevent token theft (v0.3.8)
+
+```typescript
+// ── Server side — strict mode ─────────────────────────────────────
+server.use(soulprint({ minScore: 60, requireDPoP: true }));
+// → 401 { error: "dpop_required" } if no proof header
+
+// ── Client side — sign every request ─────────────────────────────
+import { signDPoP, serializeDPoP } from "soulprint-core";
+
+// Load your keypair (never transmit the private key)
+const { privateKey, did } = loadKeypair();
+const myToken = "<your-SPT>";
+
+// Before each tool call:
+const proof = signDPoP(privateKey, did, "POST", toolUrl, myToken);
+headers["X-Soulprint"]       = myToken;
+headers["X-Soulprint-Proof"] = serializeDPoP(proof);
+```
+
+A stolen SPT is **useless** without the private key. The proof is:
+- Unique per request (random nonce)
+- URL + method bound (no MITM)
+- Expires in 5 minutes
+- Hash-bound to the specific token
+
 ---
 
 ## Protect Any REST API
@@ -131,14 +157,19 @@ const app = express();
 // Protect entire API
 app.use(soulprint({ minScore: 40 }));
 
+// Strict: require DPoP proof (prevent token theft)
+app.use(soulprint({ minScore: 65, requireDPoP: true }));
+
 // Or specific routes
 app.post("/sensitive", soulprint({ require: ["DocumentVerified", "FaceMatch"] }), handler);
 
-// Access the verified identity
+// Access the verified identity + check if token was auto-renewed
 app.get("/me", soulprint({ minScore: 20 }), (req, res) => {
+  const renewedToken = res.getHeader("X-Soulprint-Token-Renewed");
   res.json({
     nullifier: req.soulprint!.nullifier,  // unique per human, no PII
     score:     req.soulprint!.score,
+    ...(renewedToken ? { token_renewed: renewedToken } : {}),
   });
 });
 ```
@@ -154,8 +185,6 @@ fastify.get("/me", async (request) => ({
   nullifier: request.soulprint?.nullifier,
 }));
 ```
-
----
 
 ## Run a Validator Node
 
@@ -664,6 +693,96 @@ invalid_proof.pi_a[0] = (valid_proof.pi_a[0] + nonce) mod p
 This produces a cryptographically invalid proof that snarkjs will always reject — but it's unpredictable without the nonce.
 
 **Automatic peer verification** — `POST /peers/register` now runs `verifyPeerBehavior()` before accepting any peer. A peer with modified ZK code is rejected with HTTP 403.
+
+### Phase 5h — DPoP: Demonstrating Proof of Possession (v0.3.8) ✅
+
+SPT tokens are bearer tokens — stolen tokens could be used until expiry (24h). **DPoP** closes this window by requiring a fresh cryptographic proof with every request.
+
+```
+Without DPoP:  stolen SPT → attacker calls API → SUCCESS ✗
+With DPoP:     stolen SPT → attacker has no private key → 401 ✓
+```
+
+**How it works:**
+
+Every request carries `X-Soulprint-Proof` — a payload signed with the user's Ed25519 private key:
+
+```typescript
+{
+  typ:      "soulprint-dpop",
+  method:   "POST",           // HTTP method — bound
+  url:      "https://...",    // exact URL — bound
+  nonce:    "a3f1b2...",      // 16 random bytes — unique per request
+  iat:      1740000000,       // expires in 5 minutes
+  spt_hash: sha256(spt),      // bound to THIS specific token
+}
+// Signed: Ed25519(sha256(JSON.stringify(payload)), privateKey)
+```
+
+**Attacks blocked (8):** token theft, replay, URL MITM, method MITM, DID mismatch, expired proof, malformed proof, foreign token reuse.
+
+**API:**
+```typescript
+import { signDPoP, verifyDPoP, serializeDPoP, NonceStore } from "soulprint-core";
+
+const proof  = signDPoP(privateKey, did, "POST", url, spt);
+const header = serializeDPoP(proof);  // base64url string → X-Soulprint-Proof
+
+const result = verifyDPoP(header, spt, "POST", url, nonceStore, sptDid);
+// result.valid → bool | result.reason → string
+```
+
+---
+
+### Phase 5i — MCPRegistry: Verified MCP Ecosystem (v0.3.9) ✅
+
+A public on-chain registry of verified MCP servers. Agents can check whether a server is legitimate before trusting it.
+
+**Contract:** `MCPRegistry.sol` on Base Sepolia  
+**Address:** `0x59EA3c8f60ecbAe22B4c323A8dDc2b0BCd9D3C2a`  
+**Admin:** Soulprint Protocol (not any individual MCP)
+
+```
+Unverified MCP:  agent connects → no guarantee → risk ✗
+Verified MCP:    isVerified(0x...) → true on-chain → trusted ✓
+```
+
+**Registration flow:**
+```bash
+# 1. Any dev registers their MCP (permissionless)
+curl -X POST http://soulprint-node/admin/mcp/register \
+  -d '{ "ownerKey": "0x...", "address": "0x...",
+        "name": "My Finance MCP", "url": "https://...", "category": "finance" }'
+
+# 2. Soulprint admin reviews and verifies
+curl -X POST http://soulprint-node/admin/mcp/verify \
+  -H "Authorization: Bearer ADMIN_TOKEN" \
+  -d '{ "address": "0x..." }'
+# → on-chain tx → MCPVerified event → permanent record
+
+# 3. Anyone checks
+curl http://soulprint-node/mcps/verified
+# → [{ name: "My Finance MCP", badge: "✅ VERIFIED", verified_at: "..." }]
+```
+
+**Check from code:**
+```typescript
+import { isVerifiedOnChain, getMCPEntry } from "soulprint-network";
+
+const trusted = await isVerifiedOnChain("0x...");  // → true/false, on-chain
+
+const entry = await getMCPEntry("0x...");
+// → { name, url, category, verified, verified_at, badge: "✅ VERIFIED by Soulprint" }
+```
+
+**Architectural separation:**
+```
+Soulprint validator = protocol authority → admin endpoints (verify/revoke)
+Individual MCPs     = participants → read-only (check status, list verified)
+MCPRegistry.sol     = source of truth → on-chain, immutable, auditable
+```
+
+---
 
 ## Protocol Spec
 
