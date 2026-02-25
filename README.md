@@ -256,7 +256,7 @@ After verify:     ~8MB RAM   (subprocess exits → memory freed)
 | [`soulprint-core`](packages/core) | `0.1.6` | DID, SPT tokens, Poseidon nullifier, PROTOCOL constants, anti-farming | `npm i soulprint-core` |
 | [`soulprint-verify`](packages/verify-local) | `0.1.4` | OCR + face match (on-demand), biometric thresholds from PROTOCOL | `npm i soulprint-verify` |
 | [`soulprint-zkp`](packages/zkp) | `0.1.5` | Circom circuit + snarkjs prover, face_key via PROTOCOL.FACE_KEY_DIMS | `npm i soulprint-zkp` |
-| [`soulprint-network`](packages/network) | `0.2.2` | Validator node: HTTP + P2P + credential validators + anti-farming | `npm i soulprint-network` |
+| [`soulprint-network`](packages/network) | `0.4.1` | Validator node: HTTP + P2P + credential validators + anti-farming | `npm i soulprint-network` |
 | [`soulprint-mcp`](packages/mcp) | `0.1.5` | MCP middleware (3 lines) | `npm i soulprint-mcp` |
 | [`soulprint-express`](packages/express) | `0.1.3` | Express/Fastify middleware | `npm i soulprint-express` |
 | [`soulprint`](packages/cli) | `0.1.3` | `npx soulprint` CLI | `npm i -g soulprint` |
@@ -781,6 +781,51 @@ Soulprint validator = protocol authority → admin endpoints (verify/revoke)
 Individual MCPs     = participants → read-only (check status, list verified)
 MCPRegistry.sol     = source of truth → on-chain, immutable, auditable
 ```
+
+---
+
+### Phase 5j — ProtocolThresholds: Mutable On-Chain Governance (v0.4.1) ✅
+
+Protocol thresholds (SCORE_FLOOR, VERIFIED_SCORE_FLOOR, FACE_SIM_*, etc.) now live on-chain in `ProtocolThresholds.sol` instead of being hardcoded.
+
+**Contract (Base Sepolia):** `0xD8f78d65b35806101672A49801b57F743f2D2ab1`
+
+```solidity
+// Anyone can read
+getThreshold("SCORE_FLOOR")         // → 65
+getThreshold("FACE_SIM_DOC_SELFIE") // → 350 (= 0.35)
+getAll()                            // → all 9 thresholds
+
+// Only superAdmin can write
+setThreshold("SCORE_FLOOR", 70)     // emits ThresholdUpdated event
+
+// Admin transfer (2-step safety)
+proposeSuperAdmin(addr) → acceptSuperAdmin()
+```
+
+**Validator integration:**
+- Node loads thresholds from blockchain at startup (non-blocking, fallback to local if RPC unreachable)
+- Auto-refresh every 10 minutes
+- New endpoint: `GET /protocol/thresholds`
+
+```json
+{
+  "source": "blockchain",
+  "contract": "0xD8f78d65b35806101672A49801b57F743f2D2ab1",
+  "thresholds": {
+    "SCORE_FLOOR": 65,
+    "VERIFIED_SCORE_FLOOR": 52,
+    "MIN_ATTESTER_SCORE": 65,
+    "FACE_SIM_DOC_SELFIE": 0.35,
+    "FACE_SIM_SELFIE_SELFIE": 0.65,
+    "DEFAULT_REPUTATION": 10,
+    "IDENTITY_MAX": 80,
+    "REPUTATION_MAX": 20
+  }
+}
+```
+
+**Tests:** 17/17 real flow tests on Base Sepolia (`tests/protocol-thresholds-tests.mjs`)
 
 ---
 

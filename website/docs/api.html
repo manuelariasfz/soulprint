@@ -426,6 +426,66 @@ Content-Type: application/json
   "message": "🚫 MCP 0x... revoked. Reason: 'Malicious behavior detected'"
 }</code></pre>
 
+    <!-- ProtocolThresholds -->
+    <h2 id="protocol-thresholds"><code>ProtocolThresholds — On-Chain Governance</code> <span style="font-size:0.7em;background:#a855f7;color:#fff;padding:2px 8px;border-radius:10px">v0.4.1</span></h2>
+    <p>Protocol thresholds (SCORE_FLOOR, FACE_SIM_*, etc.) live on <code>ProtocolThresholds.sol</code> (Base Sepolia: <code>0xD8f78d65b35806101672A49801b57F743f2D2ab1</code>). Only the <code>superAdmin</code> can modify them; anyone can read. Validators load them at startup and refresh every 10 minutes.</p>
+
+    <h3><span class="method method-get">GET</span> /protocol/thresholds</h3>
+    <p>Returns all live protocol thresholds loaded from the blockchain.</p>
+    <pre><code>GET /protocol/thresholds</code></pre>
+    <p><strong>Response 200</strong></p>
+    <pre><code>{
+  "source":    "blockchain",
+  "contract":  "0xD8f78d65b35806101672A49801b57F743f2D2ab1",
+  "chain":     "Base Sepolia (chainId: 84532)",
+  "thresholds": {
+    "SCORE_FLOOR":            65,
+    "VERIFIED_SCORE_FLOOR":   52,
+    "MIN_ATTESTER_SCORE":     65,
+    "FACE_SIM_DOC_SELFIE":    0.35,
+    "FACE_SIM_SELFIE_SELFIE": 0.65,
+    "DEFAULT_REPUTATION":     10,
+    "IDENTITY_MAX":           80,
+    "REPUTATION_MAX":         20
+  },
+  "last_loaded": "2026-02-24T22:00:00.000Z",
+  "note": "Solo el superAdmin del contrato puede modificar estos valores on-chain"
+}</code></pre>
+    <p><code>source</code>: <code>"blockchain"</code> when loaded from chain, <code>"local_fallback"</code> if RPC is unreachable at node startup.</p>
+
+    <h3>On-Chain Read (Solidity / ethers.js)</h3>
+    <pre><code>const ABI = [
+  "function getThreshold(string calldata name) external view returns (uint256)",
+  "function getAll() external view returns (string[] memory names, uint256[] memory values)",
+];
+const contract = new ethers.Contract(
+  "0xD8f78d65b35806101672A49801b57F743f2D2ab1", ABI, provider
+);
+const scoreFloor = await contract.getThreshold("SCORE_FLOOR");  // → 65n
+const [names, values] = await contract.getAll();                // → 9 entries</code></pre>
+
+    <h3>SuperAdmin — Update Threshold</h3>
+    <p>Only callable by the <code>superAdmin</code> wallet. Emits <code>ThresholdUpdated(key, oldValue, newValue, by, timestamp)</code>.</p>
+    <pre><code>// Only superAdmin
+const ABI_WRITE = [
+  "function setThreshold(string calldata name, uint256 value) external",
+];
+const c = new ethers.Contract(CONTRACT_ADDRESS, ABI_WRITE, adminWallet);
+await (await c.setThreshold("SCORE_FLOOR", 70)).wait();</code></pre>
+
+    <h3>Canonical Values (v0.4.1)</h3>
+    <table>
+      <tr><th>Name</th><th>Value</th><th>Notes</th></tr>
+      <tr><td><code>SCORE_FLOOR</code></td><td>65</td><td>Min score for protected services</td></tr>
+      <tr><td><code>VERIFIED_SCORE_FLOOR</code></td><td>52</td><td>Min combined identity+reputation</td></tr>
+      <tr><td><code>MIN_ATTESTER_SCORE</code></td><td>65</td><td>Min score to issue attestations</td></tr>
+      <tr><td><code>FACE_SIM_DOC_SELFIE</code></td><td>350 (0.35)</td><td>Doc-photo vs selfie cosine similarity ×1000</td></tr>
+      <tr><td><code>FACE_SIM_SELFIE_SELFIE</code></td><td>650 (0.65)</td><td>Selfie vs selfie ×1000</td></tr>
+      <tr><td><code>DEFAULT_REPUTATION</code></td><td>10</td><td>Initial reputation for new identities</td></tr>
+      <tr><td><code>IDENTITY_MAX</code></td><td>80</td><td>Max identity contribution to score</td></tr>
+      <tr><td><code>REPUTATION_MAX</code></td><td>20</td><td>Max reputation contribution to score</td></tr>
+    </table>
+
 </main>
 </div>
 </body>

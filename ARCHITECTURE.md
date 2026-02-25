@@ -25,6 +25,7 @@
 13. [SPT Auto-Renewal (v0.3.6)](#spt-auto-renewal-v036)
 14. [DPoP — Demonstrating Proof of Possession (v0.3.8)](#dpop--demonstrating-proof-of-possession-v038)
 15. [MCPRegistry — Verified MCP Ecosystem (v0.3.9)](#mcpregistry--verified-mcp-ecosystem-v039)
+16. [ProtocolThresholds — Thresholds Mutables On-Chain (v0.4.1)](#protocolthresholds--thresholds-mutables-on-chain-v041)
 16. [Multi-Country Registry](#multi-country-registry)
 17. [Security Threat Matrix](#security-threat-matrix)
 18. [Data Flow — Full Journey](#data-flow--full-journey)
@@ -921,10 +922,11 @@ Flowchain Backup (BlockchainAnchor — blockchain-anchor.ts):
              └── 3 fallos: blockchain-queue.json (flushea cada 60s)
 
 Contratos en Base Sepolia (chainId: 84532):
-  ProtocolConstants:  0x20EEeFe3e59e6c76065A3037375053e7A9c94529
-  SoulprintRegistry:  0xE6F804c3c90143721A938a20478a779F142254Fd
-  AttestationLedger:  0xD91595bbb8f649e4E3a14cF525cC83D098FEfE57
-  ValidatorRegistry:  0xE9418dBF769082363e784de006008b1597F5EeE9
+  ProtocolConstants:    0x20EEeFe3e59e6c76065A3037375053e7A9c94529
+  ProtocolThresholds:   0xD8f78d65b35806101672A49801b57F743f2D2ab1  ← mutable (superAdmin)
+  SoulprintRegistry:    0xE6F804c3c90143721A938a20478a779F142254Fd
+  AttestationLedger:    0xD91595bbb8f649e4E3a14cF525cC83D098FEfE57
+  ValidatorRegistry:    0xE9418dBF769082363e784de006008b1597F5EeE9
 ```
 
 **Activar backup:**
@@ -1381,10 +1383,59 @@ packages/verify-local/src/document/
 | **MCP falso** | Servidor MCP no verificado | MCPRegistry on-chain: isVerified() antes de usar el MCP |
 | **Admin MCPRegistry** | Alguien roba ADMIN_TOKEN | Doble capa: ADMIN_TOKEN (HTTP) + ADMIN_PRIVATE_KEY (tx on-chain) |
 | **MCP key compromise** | Roba ADMIN_PRIVATE_KEY | proposeSuperAdmin + acceptSuperAdmin — transferencia 2 pasos |
+| **Threshold manipulation** | Bajan SCORE_FLOOR para aceptar bots | ProtocolThresholds.sol — solo superAdmin puede cambiarlos; ThresholdUpdated event auditable |
 
 ---
 
-## Data Flow — Full Journey
+## ProtocolThresholds — Thresholds Mutables On-Chain (v0.4.1)
+
+Los thresholds del protocolo (SCORE_FLOOR, VERIFIED_SCORE_FLOOR, FACE_SIM_*, etc.) viven en
+`ProtocolThresholds.sol` (Base Sepolia: `0xD8f78d65b35806101672A49801b57F743f2D2ab1`).
+
+```
+┌───────────────────────────────────────────────────────────────────┐
+│               ProtocolThresholds Contract                          │
+│                                                                   │
+│  Cualquiera puede leer:                                            │
+│    getThreshold("SCORE_FLOOR")        → 65                        │
+│    getThreshold("FACE_SIM_DOC_SELFIE")→ 350 (= 0.35)             │
+│    getAll()  → 9 thresholds                                       │
+│                                                                   │
+│  Solo superAdmin puede escribir:                                  │
+│    setThreshold("SCORE_FLOOR", 70)   → emite ThresholdUpdated     │
+│                                                                   │
+│  Admin transfer (2-step):                                         │
+│    proposeSuperAdmin(addr)  ──▶  acceptSuperAdmin()               │
+└───────────────────────────────────────────────────────────────────┘
+
+Validator Node startup:
+  refreshThresholds()  ──▶  ProtocolThresholdsClient.load()
+    ├── hit blockchain  ──▶  liveThresholds (source: "blockchain")
+    └── falla (sin RPC) ──▶  liveThresholds (source: "local_fallback")
+
+  setInterval(refreshThresholds, 10 * 60 * 1000)  ← refresco cada 10 min
+
+GET /protocol/thresholds  →  {
+  source: "blockchain" | "local_fallback",
+  contract: "0xD8f78d65...",
+  thresholds: { SCORE_FLOOR, VERIFIED_SCORE_FLOOR, ... }
+}
+```
+
+### Thresholds canónicos (v0.4.1)
+| Nombre | Valor | Semántica |
+|--------|-------|-----------|
+| `SCORE_FLOOR` | 65 | Score mínimo para acceder a servicios protegidos |
+| `VERIFIED_SCORE_FLOOR` | 52 | Score mínimo con identity+reputation combinados |
+| `MIN_ATTESTER_SCORE` | 65 | Score mínimo para poder emitir attestations |
+| `FACE_SIM_DOC_SELFIE` | 350 | Similitud mín. doc vs selfie (× 1000) |
+| `FACE_SIM_SELFIE_SELFIE` | 650 | Similitud mín. selfie vs selfie (× 1000) |
+| `DEFAULT_REPUTATION` | 10 | Reputación inicial asignada a nuevas identidades |
+| `IDENTITY_MAX` | 80 | Puntos máximos que aporta la identidad al score |
+| `REPUTATION_MAX` | 20 | Puntos máximos que aporta la reputación al score |
+| `VERIFY_RETRY_MAX` | 3 | Intentos máximos de verificación por identidad |
+
+---
 
 ```
 Principal (humano)                 Bot (IA)                  Servicio
@@ -1551,7 +1602,8 @@ soulprint/
 │       │   ├── GovernanceModule.sol     Upgrading (70% + 48h timelock)
 │       │   ├── Groth16Verifier.sol      Verificador ZK real (generado de .zkey)
 │       │   ├── MCPRegistry.sol          Registro de MCPs verificados  [v0.3.9]
-│       │   └── ProtocolConstants.sol    PROTOCOL_HASH on-chain
+│       │   └── ProtocolConstants.sol    PROTOCOL_HASH on-chain (immutable)
+│       │   └── ProtocolThresholds.sol   Thresholds mutables (superAdmin-gated)
 │       ├── scripts/
 │       │   ├── deploy.ts                Deploy inicial
 │       │   ├── deploy-v2.ts             Deploy con admin bloqueado + verifier real
