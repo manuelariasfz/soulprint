@@ -112,7 +112,7 @@ setInterval(async () => {
       }
     }
   } catch {}
-}, 5 * 60 * 1000);
+}, 30 * 60 * 1000);
 
 // ─── Anti-entropy sync loop ───────────────────────────────────────────────────
 setInterval(async () => {

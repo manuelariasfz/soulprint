@@ -3,10 +3,11 @@ FROM node:22-slim
 WORKDIR /app
 
 # v0.6.0 — blockchain-first, no libp2p
-RUN npm install -g soulprint-network@0.6.0 --prefer-online
+RUN npm install -g soulprint-network@0.6.1 --prefer-online
 
 ENV SOULPRINT_PORT=4888
 ENV PORT=4888
+ENV NODE_OPTIONS="--max-old-space-size=350"
 EXPOSE 4888
 
-CMD ["node", "--max-old-space-size=400", "/usr/local/lib/node_modules/soulprint-network/dist/server.js"]
+CMD ["node", "--max-old-space-size=350", "/usr/local/lib/node_modules/soulprint-network/dist/server.js"]

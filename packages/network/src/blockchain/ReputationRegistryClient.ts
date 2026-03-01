@@ -62,7 +62,7 @@ export class ReputationRegistryClient {
     cacheTTLMs?: number;
   }) {
     this.address    = opts?.address    ?? REPUTATION_REGISTRY_ADDRESS;
-    this.cacheTTLMs = opts?.cacheTTLMs ?? 2 * 60 * 1000;  // 2 min
+    this.cacheTTLMs = opts?.cacheTTLMs ?? 60 * 60 * 1000;  // 60 min
     const rpc       = opts?.rpc        ?? REPUTATION_REGISTRY_RPC;
     this.provider   = new ethers.JsonRpcProvider(rpc);
 
