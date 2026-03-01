@@ -1,6 +1,6 @@
 {
   "name": "soulprint-network",
-  "version": "0.4.5",
+  "version": "0.4.6",
   "description": "Soulprint validator node \u2014 HTTP server that verifies ZK proofs, co-signs SPTs, anti-Sybil registry",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -52,7 +52,7 @@
     "otpauth": "^9.5.0",
     "otplib": "^13.3.0",
     "soulprint-core": "0.1.11",
-    "soulprint-zkp": "0.1.5",
+    "soulprint-zkp": "0.1.6",
     "uint8arrays": "5.1.0"
   },
   "devDependencies": {
