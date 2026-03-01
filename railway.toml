@@ -1,0 +1,11 @@
+[build]
+builder = "dockerfile"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+restartPolicyType = "always"
+healthcheckPath = "/info"
+healthcheckTimeout = 30
+
+[[services]]
+name = "soulprint-node"
