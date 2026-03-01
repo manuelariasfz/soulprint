@@ -52,41 +52,73 @@ try {
   console.warn(`   Error: ${err?.message ?? String(err)}\n`);
 }
 
-// ─── On-chain PeerRegistry (auto-registro) ────────────────────────────────────
+// ─── On-chain PeerRegistry (auto-registro + bootstrap desde chain) ────────────
 const adminPrivateKey = process.env.ADMIN_PRIVATE_KEY;
 const peerRegistry = new PeerRegistryClient({
   privateKey: adminPrivateKey,
 });
 setPeerRegistryClient(peerRegistry);
 
-// Register self after P2P is ready (non-blocking)
+// Bootstrap P2P + register self after node is ready (non-blocking)
 setTimeout(async () => {
   try {
+    // 1. Leer peers on-chain y hacer dial P2P a sus multiaddrs
+    const chainPeers = await peerRegistry.getAllPeers().catch(() => []);
+    if (chainPeers.length > 0) {
+      console.log(`[peer-registry] 🔗 ${chainPeers.length} peer(s) encontrados on-chain — conectando...`);
+      for (const peer of chainPeers) {
+        try {
+          if (!peer.multiaddr) continue;
+          // Si es multiaddr P2P (/ip4/.../tcp/.../p2p/...) intentamos dial
+          if (peer.multiaddr.startsWith("/ip4") || peer.multiaddr.startsWith("/dns")) {
+            // Agregar como peer conocido via HTTP bootstrap (más estable que dial directo)
+            const httpUrl = peer.multiaddr.replace(/\/ip4\/([^/]+)\/tcp\/(\d+).*/, "http://$1:$2").replace("/p2p/", "");
+            if (httpUrl.startsWith("http")) {
+              const PROTOCOL_HASH = "dfe1ccca1270ec86f93308dc4b981bab1d6bd74bdcc334059f4380b407ca07ca";
+              await fetch(`http://localhost:${HTTP_PORT}/peers/register`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ url: httpUrl, protocol_hash: PROTOCOL_HASH }),
+                signal: AbortSignal.timeout(5_000),
+              }).catch(() => null);
+            }
+            console.log(`[peer-registry]   ✅ Peer P2P registrado: ${peer.multiaddr.slice(0, 40)}`);
+          } else if (peer.multiaddr.startsWith("http")) {
+            // HTTP peer — registrar vía /peers/register
+            const PROTOCOL_HASH = "dfe1ccca1270ec86f93308dc4b981bab1d6bd74bdcc334059f4380b407ca07ca";
+            await fetch(`http://localhost:${HTTP_PORT}/peers/register`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ url: peer.multiaddr, protocol_hash: PROTOCOL_HASH }),
+              signal: AbortSignal.timeout(5_000),
+            }).catch(() => null);
+            console.log(`[peer-registry]   🌐 Peer HTTP registrado: ${peer.multiaddr}`);
+          }
+        } catch (e: any) {
+          console.warn(`[peer-registry]   ⚠️  No se pudo conectar a ${peer.multiaddr}: ${e.message}`);
+        }
+      }
+    } else {
+      console.log("[peer-registry] ℹ️  No hay peers registrados on-chain aún — primer nodo de la red");
+    }
+
+    // 2. Registrar self on-chain
     if (!adminPrivateKey) {
       console.warn("[peer-registry] ⚠️  ADMIN_PRIVATE_KEY not set — skipping on-chain registration");
       return;
     }
-    // Get node identity from validator (fetched via HTTP)
-    const infoRes = await fetch(`http://localhost:${HTTP_PORT}/health`, { signal: AbortSignal.timeout(5000) });
-    const info = await infoRes.json() as any;
-    // Get P2P multiaddr (first non-localhost if available)
     let multiaddr = `http://localhost:${HTTP_PORT}`;
     if (p2pNode) {
       const addrs: string[] = p2pNode.getMultiaddrs().map((m: any) => m.toString());
       const publicAddr = addrs.find(a => !a.includes("127.0.0.1") && !a.includes("/ip4/0.0.0.0"));
       multiaddr = publicAddr ?? addrs[0] ?? multiaddr;
     }
-    // Use node DID from keypair (read from health endpoint) and P2P peerId
-    const nodeDid  = (globalThis as any)._nodeDid   ?? `did:soulprint:node:${Date.now()}`;
-    const nodePeer = p2pNode?.peerId?.toString()     ?? "";
-    await peerRegistry.registerSelf({
-      peerDid:   nodeDid,
-      peerId:    nodePeer,
-      multiaddr,
-      score:     0,
-    });
+    const nodeDid  = (globalThis as any)._nodeDid ?? `did:soulprint:node:${Date.now()}`;
+    const nodePeer = p2pNode?.peerId?.toString()  ?? "";
+    await peerRegistry.registerSelf({ peerDid: nodeDid, peerId: nodePeer, multiaddr, score: 0 });
+    console.log(`[peer-registry] ✅ Registrado on-chain: ${nodeDid.slice(0, 30)}…`);
   } catch (e: any) {
-    console.warn(`[peer-registry] ⚠️  Could not register self: ${e.message}`);
+    console.warn(`[peer-registry] ⚠️  Error en bootstrap on-chain: ${e.message}`);
   }
 }, 3_000);
 
