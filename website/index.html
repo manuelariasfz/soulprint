@@ -488,7 +488,7 @@
 <div style="max-width:1100px;margin:0 auto;padding:0 2rem">
   <div class="stats-bar">
     <div class="stat"><div class="stat-num">7</div><div class="stat-label">npm packages</div></div>
-    <div class="stat"><div class="stat-num">7</div><div class="stat-label">countries supported</div></div>
+    <div class="stat"><div class="stat-num">1</div><div class="stat-label">country supported (🇨🇴)</div></div>
     <div class="stat"><div class="stat-num">303</div><div class="stat-label">tests passing</div></div>
     <div class="stat"><div class="stat-num">100</div><div class="stat-label">max trust score</div></div>
     <div class="stat"><div class="stat-num">0</div><div class="stat-label">PII stored</div></div>
@@ -604,7 +604,7 @@
 
   <h3 style="margin-top:2.5rem;font-size:1.1rem;text-align:left">Bot reputation (max 20 pts)</h3>
   <p style="color:var(--muted);font-size:.9rem;text-align:left;margin-bottom:1rem">
-    Starts at 10 (neutral). Verified services issue +1 or -1 attestations. Propagates P2P across all nodes.
+    Starts at 10 (neutral). Verified services issue +1 or -1 attestations. Anchored on Base Sepolia blockchain.
   </p>
 
   <div class="tiers">
@@ -676,7 +676,7 @@
         <li><span class="icon">🔴</span> <strong>Spam detected</strong> → -1 rep<br><span style="font-size:.8rem;color:var(--muted);margin-left:1.5rem">>5 requests in 60 seconds</span></li>
         <li><span class="icon">🟢</span> <strong>Normal usage</strong> → +1 rep<br><span style="font-size:.8rem;color:var(--muted);margin-left:1.5rem">3+ tools, 3+ completions, no spam</span></li>
         <li><span class="icon">⚡</span> <strong>Attestations signed</strong> by mcp-colombia DID</li>
-        <li><span class="icon">🌐</span> <strong>Gossips P2P</strong> to all known validator nodes</li>
+        <li><span class="icon">🌐</span> <strong>Syncs state via blockchain</strong> — no P2P required</li>
         <li><span class="icon">🔐</span> <strong>Ed25519 signed</strong> — tamper-proof, verifiable offline</li>
       </ul>
 
@@ -718,10 +718,10 @@
 <section id="network" style="background:var(--bg);max-width:100%;padding:5rem 2rem;overflow:hidden">
 <div style="max-width:1100px;margin:0 auto">
   <div class="section-label">Live Network</div>
-  <h2>Decentralized <span>P2P validator network</span></h2>
+  <h2>Blockchain-anchored <span>validator network</span></h2>
   <p class="section-sub">
-    Every node runs an independent ZK verifier. No central authority — identities are
-    co-signed across the network using BFT consensus and anchored to Base Sepolia blockchain.
+    Every node runs an independent ZK verifier. State lives on Base Sepolia — no central server,
+    no P2P sync needed. The blockchain <em>is</em> the network.
   </p>
 
   <!-- Canvas visualization -->
@@ -761,7 +761,7 @@
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1rem;margin-top:1.5rem">
     <div class="net-card">
       <div id="stat-peers" class="net-num">—</div>
-      <div class="net-lbl">🔗 Nodes on-chain</div>
+      <div class="net-lbl">🔗 Active validator nodes</div>
     </div>
     <div class="net-card">
       <div id="stat-verified" class="net-num">—</div>
@@ -863,7 +863,7 @@
     // NullifierRegistry & ReputationRegistry addresses not yet in addresses.json
     // They return 0 until deployed — show "—" gracefully
     return {
-      peerCount:  decodeArrayLength(peersHex),
+      peerCount:  4, // 4 active validator nodes (raw on-chain count includes restart duplicates)
       nulliCount: 0,   // will update once NullifierRegistry address is public
       scoreCount: 0,   // will update once ReputationRegistry address is public
       mcpCount:   decodeUint256(mcpHex),
@@ -895,16 +895,16 @@
   setTimeout(resizeCanvas, 100);
 
   // Node data
-  const NODE_COUNT = 14;
+  const NODE_COUNT = 4;
   const nodes = Array.from({ length: NODE_COUNT }, (_, i) => ({
     x:    20 + Math.random() * 860,
     y:    20 + Math.random() * 300,
     vx:   (Math.random() - .5) * .4,
     vy:   (Math.random() - .5) * .4,
     r:    i === 0 ? 10 : 5 + Math.random() * 4,
-    verified: i < 4,
+    verified: true,
     pulse: Math.random() * Math.PI * 2,
-    color: i === 0 ? "#7c6cf5" : (i < 4 ? "#4ade80" : "#6b7280"),
+    color: i === 0 ? "#7c6cf5" : "#4ade80",
   }));
 
   // Packets traveling between nodes
