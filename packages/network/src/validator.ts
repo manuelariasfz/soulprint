@@ -52,6 +52,12 @@ import {
   PeerRegistryClient,
   type PeerEntry,
 } from "./blockchain/PeerRegistryClient.js";
+import {
+  NullifierRegistryClient,
+} from "./blockchain/NullifierRegistryClient.js";
+import {
+  ReputationRegistryClient,
+} from "./blockchain/ReputationRegistryClient.js";
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const PORT         = parseInt(process.env.SOULPRINT_PORT ?? String(PROTOCOL.DEFAULT_HTTP_PORT));
@@ -128,6 +134,25 @@ let peerRegistryClient: PeerRegistryClient | null = null;
 
 export function setPeerRegistryClient(client: PeerRegistryClient): void {
   peerRegistryClient = client;
+}
+
+// ── On-Chain Registries (v0.5.0) ───────────────────────────────────────────────
+// The blockchain IS the shared state. These are the single source of truth.
+// Only soulprint.digital validator can WRITE; anyone can READ.
+let nullifierRegistry: NullifierRegistryClient | null = null;
+let reputationRegistry: ReputationRegistryClient | null = null;
+
+export function setNullifierRegistry(client: NullifierRegistryClient): void {
+  nullifierRegistry = client;
+}
+export function setReputationRegistry(client: ReputationRegistryClient): void {
+  reputationRegistry = client;
+}
+export function getNullifierRegistry(): NullifierRegistryClient | null {
+  return nullifierRegistry;
+}
+export function getReputationRegistry(): ReputationRegistryClient | null {
+  return reputationRegistry;
 }
 
 /**
@@ -268,6 +293,14 @@ function applyAttestation(att: BotAttestation): BotReputation {
     hasDocumentVerified: hasDocument,
   };
   saveReputation();
+  // ── Write reputation to on-chain ReputationRegistry (v0.5.0) — non-blocking
+  if (reputationRegistry) {
+    reputationRegistry.setScore({
+      did:     att.target_did,
+      score:   finalRepScore,
+      context: "soulprint:v1",
+    }).catch(e => console.warn("[reputation-registry] ⚠️  On-chain write failed:", e.message));
+  }
   return { score: finalRepScore, attestations: allAtts.length, last_updated: rep.last_updated };
 }
 
@@ -755,6 +788,17 @@ async function handleVerify(req: IncomingMessage, res: ServerResponse, nodeKeypa
   } else {
     nullifiers[zkResult.nullifier] = { did: token.did, verified_at: now };
     saveNullifiers();
+    // ── Write to on-chain NullifierRegistry (v0.5.0) — non-blocking ──────────
+    // soulprint.digital validator signs and certifies the identity on-chain.
+    // Anyone can now verify isRegistered(nullifier) without trusting this node.
+    if (nullifierRegistry) {
+      const score = repStore[token.did]?.score ?? 0;
+      nullifierRegistry.registerNullifier({
+        nullifier: zkResult.nullifier,
+        did:       token.did,
+        score,
+      }).catch(e => console.warn("[nullifier-registry] ⚠️  On-chain write failed:", e.message));
+    }
   }
 
   const coSig = sign({ nullifier: zkResult.nullifier, did: token.did, timestamp: now }, nodeKeypair.privateKey);
@@ -1153,30 +1197,40 @@ export function startValidatorNode(port: number = PORT) {
       const httpPeers = peers.length;
       const libp2pPeers = p2pStats?.peers ?? 0;
       let registeredPeers = 0;
+      let nullifiersOnchain = 0;
+      let reputationOnchain = 0;
       try {
         if (peerRegistryClient) {
           const chainPeers = await peerRegistryClient.getAllPeers();
           registeredPeers = chainPeers.length;
         }
       } catch { /* non-fatal */ }
+      try {
+        if (nullifierRegistry) nullifiersOnchain = await nullifierRegistry.getCount();
+      } catch { /* non-fatal */ }
+      try {
+        if (reputationRegistry) reputationOnchain = await reputationRegistry.getCount();
+      } catch { /* non-fatal */ }
       return json(res, 200, {
         node_did:            nodeKeypair.did.slice(0, 20) + "...",
         version:             VERSION,
         protocol_hash:       PROTOCOL_HASH.slice(0, 16) + "...",
-        // identidades y reputación
+        // identidades y reputación (in-memory cache)
         verified_identities: Object.keys(nullifiers).length,
         reputation_profiles: Object.keys(repStore).length,
-        // peers — HTTP gossip (funciona en todos los entornos)
+        // on-chain state (v0.5.0) — blockchain IS the shared state
+        nullifiers_onchain:  nullifiersOnchain,
+        reputation_onchain:  reputationOnchain,
+        // peers — HTTP gossip
         known_peers:         httpPeers,
-        // peers — libp2p P2P (requiere multicast/bootstrap; 0 en WSL2)
+        // peers — libp2p P2P
         p2p_peers:           libp2pPeers,
         p2p_pubsub_peers:    p2pStats?.pubsubPeers ?? 0,
         p2p_enabled:         !!p2pNode,
-        // total = max de ambas capas (HTTP gossip es el piso mínimo garantizado)
         total_peers:         Math.max(httpPeers, libp2pPeers),
         // on-chain registered peers (PeerRegistry)
         registered_peers:    registeredPeers,
-        // state sync (v0.4.4)
+        // state sync (v0.5.0 — blockchain is source of truth)
         state_hash:          computeHash(Object.keys(nullifiers)).slice(0, 16) + "...",
         last_sync:           lastSyncTs,
         // estado general
@@ -1187,31 +1241,51 @@ export function startValidatorNode(port: number = PORT) {
     }
     if (cleanUrl === "/verify"               && req.method === "POST") return handleVerify(req, res, nodeKeypair, ip);
 
-    // ── State sync endpoints (v0.4.4) ─────────────────────────────────────────
-    // GET /state/hash — quick hash comparison for anti-entropy
+    // ── State endpoints (v0.5.0) — blockchain IS the shared state ────────────
+    // GET /state/hash — hash of on-chain nullifier count + reputation count
     if (cleanUrl === "/state/hash" && req.method === "GET") {
       const currentNullifiers = Object.keys(nullifiers);
-      const hash = computeHash(currentNullifiers);
+      let onchainNullifiers = currentNullifiers.length;
+      let onchainReputation = Object.keys(repStore).length;
+      try { if (nullifierRegistry) onchainNullifiers = await nullifierRegistry.getCount(); } catch {}
+      try { if (reputationRegistry) onchainReputation = await reputationRegistry.getCount(); } catch {}
+      // Hash includes on-chain counts for consensus
+      const hash = computeHash([...currentNullifiers, `onchain:${onchainNullifiers}:${onchainReputation}`]);
       return json(res, 200, {
         hash,
-        nullifier_count:    currentNullifiers.length,
-        reputation_count:   Object.keys(repStore).length,
-        attestation_count:  Object.values(repStore).reduce((n, e) => n + (e.attestations?.length ?? 0), 0),
-        timestamp:          Date.now(),
+        nullifier_count:         currentNullifiers.length,
+        nullifier_count_onchain: onchainNullifiers,
+        reputation_count:        Object.keys(repStore).length,
+        reputation_count_onchain: onchainReputation,
+        attestation_count:       Object.values(repStore).reduce((n, e) => n + (e.attestations?.length ?? 0), 0),
+        timestamp:               Date.now(),
       });
     }
 
-    // GET /state/export — full state export for sync
+    // GET /state/export — full state export including on-chain data
     if (cleanUrl === "/state/export" && req.method === "GET") {
       const allAttestations = Object.values(repStore).flatMap(e => e.attestations ?? []);
+      // Read on-chain data (cached — won't hit RPC on every call)
+      const [onchainNullifiers, onchainScores] = await Promise.all([
+        nullifierRegistry ? nullifierRegistry.getAllNullifiers().catch(() => []) : Promise.resolve([]),
+        reputationRegistry ? reputationRegistry.getAllScores().catch(() => []) : Promise.resolve([]),
+      ]);
       return json(res, 200, {
-        nullifiers:   Object.keys(nullifiers),
-        reputation:   Object.fromEntries(Object.entries(repStore).map(([did, e]) => [did, e.score])),
-        attestations: allAttestations,
+        // Local in-memory state
+        nullifiers:              Object.keys(nullifiers),
+        reputation:              Object.fromEntries(Object.entries(repStore).map(([did, e]) => [did, e.score])),
+        attestations:            allAttestations,
         peers,
-        lastSync:     lastSyncTs,
-        stateHash:    computeHash(Object.keys(nullifiers)),
-        timestamp:    Date.now(),
+        lastSync:                lastSyncTs,
+        stateHash:               computeHash(Object.keys(nullifiers)),
+        timestamp:               Date.now(),
+        // On-chain state (v0.5.0) — canonical source of truth
+        onchain: {
+          nullifiers:  onchainNullifiers,
+          reputation:  onchainScores,
+          nullifier_count: onchainNullifiers.length,
+          reputation_count: onchainScores.length,
+        },
       });
     }
 
