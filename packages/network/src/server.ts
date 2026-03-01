@@ -6,7 +6,8 @@
  *  1. HTTP server (port 4888)    — clientes y legado
  *  2. libp2p P2P node (port 6888) — Kademlia DHT + GossipSub + mDNS
  */
-import { startValidatorNode, setP2PNode, setPeerRegistryClient } from "./validator.js";
+import { startValidatorNode, setP2PNode, setPeerRegistryClient, getNodeState, setLastSyncTs } from "./validator.js";
+import { computeHash, saveState } from "./state/StateStore.js";
 import { createSoulprintP2PNode, MAINNET_BOOTSTRAP, stopP2PNode } from "./p2p.js";
 import { PeerRegistryClient } from "./blockchain/PeerRegistryClient.js";
 
@@ -154,6 +155,60 @@ if (httpBootstraps.length > 0) {
     }
   }, 2_000);
 }
+
+// ─── Anti-entropy sync loop (v0.4.4) ─────────────────────────────────────────
+// Every 60 seconds: compare state hash with each known peer.
+// If diverged, fetch full state and merge locally.
+setInterval(async () => {
+  const { nullifiers, repStore, peers: knownPeers } = getNodeState();
+  if (knownPeers.length === 0) return;
+
+  const localHash = computeHash(Object.keys(nullifiers));
+
+  for (const peerUrl of knownPeers) {
+    try {
+      const hashRes = await fetch(`${peerUrl}/state/hash`, { signal: AbortSignal.timeout(5_000) });
+      if (!hashRes.ok) continue;
+      const hashData = await hashRes.json() as any;
+      const peerHash = hashData.hash;
+
+      if (peerHash === localHash) {
+        console.log(`[sync] peer ${peerUrl}: hash match ✅`);
+        continue;
+      }
+
+      // Hashes differ — fetch full state and merge
+      const exportRes = await fetch(`${peerUrl}/state/export`, { signal: AbortSignal.timeout(10_000) });
+      if (!exportRes.ok) { console.warn(`[sync] peer ${peerUrl}: export failed (${exportRes.status})`); continue; }
+      const peerState = await exportRes.json() as any;
+
+      const mergeRes = await fetch(`http://localhost:${HTTP_PORT}/state/merge`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify(peerState),
+        signal:  AbortSignal.timeout(5_000),
+      });
+      const merged = await mergeRes.json() as any;
+      console.log(`[sync] peer ${peerUrl}: diverged → merged ${merged.new_nullifiers ?? 0} nullifiers, ${merged.new_attestations ?? 0} attestations`);
+
+      // Persist updated state
+      const { nullifiers: n2, repStore: r2, peers: p2 } = getNodeState();
+      const ts = Date.now();
+      saveState({
+        nullifiers:   Object.keys(n2),
+        reputation:   Object.fromEntries(Object.entries(r2).map(([d, e]: [string, any]) => [d, e.score])),
+        attestations: Object.values(r2).flatMap((e: any) => e.attestations ?? []),
+        peers:        p2,
+        lastSync:     ts,
+        stateHash:    computeHash(Object.keys(n2)),
+      }, 0);
+      setLastSyncTs(ts);
+
+    } catch (e: any) {
+      console.warn(`[sync] peer ${peerUrl}: error — ${e.message}`);
+    }
+  }
+}, 60_000);
 
 // ─── Graceful shutdown ────────────────────────────────────────────────────────
 async function shutdown(signal: string) {

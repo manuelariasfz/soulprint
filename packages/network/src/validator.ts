@@ -2,6 +2,7 @@ import { createServer, IncomingMessage, ServerResponse } from "node:http";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { join }     from "node:path";
 import { homedir }  from "node:os";
+import { computeHash, loadState, saveState, type NodeState } from "./state/StateStore.js";
 import {
   generateKeypair, keypairFromPrivateKey, SoulprintKeypair,
   decodeToken, sign, createToken,
@@ -270,6 +271,9 @@ function applyAttestation(att: BotAttestation): BotReputation {
   return { score: finalRepScore, attestations: allAtts.length, last_updated: rep.last_updated };
 }
 
+// ── P2P state sync metadata ───────────────────────────────────────────────────
+let lastSyncTs: number = 0;  // timestamp (ms) of last successful anti-entropy sync
+
 // ── Peers registry (P2P gossip) ───────────────────────────────────────────────
 let peers: string[] = [];   // URLs de otros nodos (ej: "http://node2.example.com:4888")
 
@@ -303,6 +307,10 @@ async function gossipAttestation(att: BotAttestation, excludeUrl?: string) {
 
   if (targets.length < peers.length - (excludeUrl ? 1 : 0)) {
     console.log(routingStats(peers.length, targets.length, att.target_did));
+  }
+
+  if (targets.length > 0) {
+    console.log(`[gossip] broadcasted to ${targets.length} peers`);
   }
 
   // Cifrar el payload con AES-256-GCM antes de enviar
@@ -920,6 +928,31 @@ function handleNullifierCheck(res: ServerResponse, nullifier: string) {
 
 // ── Server ────────────────────────────────────────────────────────────────────
 export function startValidatorNode(port: number = PORT) {
+  // ── Load persistent state from disk (v0.4.4) ───────────────────────────────
+  const persisted = loadState();
+  if (persisted.nullifiers.length > 0 || Object.keys(persisted.reputation).length > 0) {
+    console.log(`[state] Loaded ${persisted.nullifiers.length} nullifiers, ${Object.keys(persisted.reputation).length} reputation entries from disk`);
+    // Merge persisted nullifiers into in-memory store
+    for (const n of persisted.nullifiers) {
+      if (!nullifiers[n]) {
+        nullifiers[n] = { did: `did:soulprint:recovered:${n.slice(0,8)}`, verified_at: persisted.lastSync || Date.now() };
+      }
+    }
+    // Merge persisted reputation
+    for (const [did, score] of Object.entries(persisted.reputation)) {
+      if (!repStore[did]) {
+        repStore[did] = {
+          score,
+          base: 10,
+          attestations: [],
+          last_updated: persisted.lastSync || Date.now(),
+          identityScore: 0,
+          hasDocumentVerified: false,
+        };
+      }
+    }
+  }
+
   loadNullifiers();
   loadReputation();
   loadPeers();
@@ -1143,6 +1176,9 @@ export function startValidatorNode(port: number = PORT) {
         total_peers:         Math.max(httpPeers, libp2pPeers),
         // on-chain registered peers (PeerRegistry)
         registered_peers:    registeredPeers,
+        // state sync (v0.4.4)
+        state_hash:          computeHash(Object.keys(nullifiers)).slice(0, 16) + "...",
+        last_sync:           lastSyncTs,
         // estado general
         uptime_ms:           Date.now() - ((globalThis as any)._startTime ?? Date.now()),
         timestamp:           Date.now(),
@@ -1150,6 +1186,107 @@ export function startValidatorNode(port: number = PORT) {
       });
     }
     if (cleanUrl === "/verify"               && req.method === "POST") return handleVerify(req, res, nodeKeypair, ip);
+
+    // ── State sync endpoints (v0.4.4) ─────────────────────────────────────────
+    // GET /state/hash — quick hash comparison for anti-entropy
+    if (cleanUrl === "/state/hash" && req.method === "GET") {
+      const currentNullifiers = Object.keys(nullifiers);
+      const hash = computeHash(currentNullifiers);
+      return json(res, 200, {
+        hash,
+        nullifier_count:    currentNullifiers.length,
+        reputation_count:   Object.keys(repStore).length,
+        attestation_count:  Object.values(repStore).reduce((n, e) => n + (e.attestations?.length ?? 0), 0),
+        timestamp:          Date.now(),
+      });
+    }
+
+    // GET /state/export — full state export for sync
+    if (cleanUrl === "/state/export" && req.method === "GET") {
+      const allAttestations = Object.values(repStore).flatMap(e => e.attestations ?? []);
+      return json(res, 200, {
+        nullifiers:   Object.keys(nullifiers),
+        reputation:   Object.fromEntries(Object.entries(repStore).map(([did, e]) => [did, e.score])),
+        attestations: allAttestations,
+        peers,
+        lastSync:     lastSyncTs,
+        stateHash:    computeHash(Object.keys(nullifiers)),
+        timestamp:    Date.now(),
+      });
+    }
+
+    // POST /state/merge — merge partial state from a peer
+    if (cleanUrl === "/state/merge" && req.method === "POST") {
+      let body: any;
+      try { body = await readBody(req); } catch (e: any) { return json(res, 400, { error: e.message }); }
+
+      const incoming = body ?? {};
+      let newNullifiers = 0;
+      let newAttestations = 0;
+
+      // Merge nullifiers (union)
+      if (Array.isArray(incoming.nullifiers)) {
+        for (const n of incoming.nullifiers) {
+          if (typeof n === "string" && !nullifiers[n]) {
+            nullifiers[n] = { did: `did:soulprint:synced:${n.slice(0,8)}`, verified_at: Date.now() };
+            newNullifiers++;
+          }
+        }
+        if (newNullifiers > 0) saveNullifiers();
+      }
+
+      // Merge reputation (take max score)
+      if (incoming.reputation && typeof incoming.reputation === "object") {
+        for (const [did, score] of Object.entries(incoming.reputation)) {
+          if (typeof score !== "number") continue;
+          if (!repStore[did]) {
+            repStore[did] = { score, base: 10, attestations: [], last_updated: Date.now(), identityScore: 0, hasDocumentVerified: false };
+          } else if (score > repStore[did].score) {
+            repStore[did].score = score;
+            repStore[did].last_updated = Date.now();
+          }
+        }
+        if (Object.keys(incoming.reputation).length > 0) saveReputation();
+      }
+
+      // Merge attestations (dedup by issuer+timestamp+context)
+      if (Array.isArray(incoming.attestations)) {
+        for (const att of incoming.attestations) {
+          if (!att?.issuer_did || !att?.target_did) continue;
+          const existing = repStore[att.target_did];
+          const prevAtts = existing?.attestations ?? [];
+          const isDup = prevAtts.some(a =>
+            a.issuer_did === att.issuer_did &&
+            a.timestamp  === att.timestamp  &&
+            a.context    === att.context
+          );
+          if (!isDup) {
+            applyAttestation(att);
+            newAttestations++;
+          }
+        }
+      }
+
+      // Persist new unified state
+      if (newNullifiers > 0 || newAttestations > 0) {
+        const snapshot: NodeState = {
+          nullifiers:   Object.keys(nullifiers),
+          reputation:   Object.fromEntries(Object.entries(repStore).map(([d, e]) => [d, e.score])),
+          attestations: Object.values(repStore).flatMap(e => e.attestations ?? []),
+          peers,
+          lastSync:     Date.now(),
+          stateHash:    computeHash(Object.keys(nullifiers)),
+        };
+        saveState(snapshot);
+        lastSyncTs = Date.now();
+      }
+
+      return json(res, 200, {
+        ok:               true,
+        new_nullifiers:   newNullifiers,
+        new_attestations: newAttestations,
+      });
+    }
     if (cleanUrl === "/token/renew"          && req.method === "POST") return handleTokenRenew(req, res, nodeKeypair);
     if (cleanUrl === "/challenge"            && req.method === "POST") return handleChallenge(req, res, nodeKeypair);
     if (cleanUrl === "/reputation/attest"    && req.method === "POST") return handleAttest(req, res, ip);
@@ -1541,3 +1678,9 @@ export async function getNodeInfo(nodeUrl: string) {
 
 export const BOOTSTRAP_NODES: string[] = [];
 export { applyAttestation };
+
+/** Used by anti-entropy loop in server.ts */
+export function getNodeState() {
+  return { nullifiers, repStore, peers, lastSyncTs };
+}
+export function setLastSyncTs(ts: number) { lastSyncTs = ts; }
