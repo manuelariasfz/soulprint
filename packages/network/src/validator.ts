@@ -68,7 +68,7 @@ const NULLIFIER_DB = join(NODE_DIR, "nullifiers.json");
 const REPUTE_DB    = join(NODE_DIR, "reputation.json");
 const PEERS_DB     = join(NODE_DIR, "peers.json");
 const AUDIT_DB     = join(NODE_DIR, "audit.json");
-const VERSION      = "0.2.0";
+const VERSION      = "0.5.0";
 
 const MAX_BODY_BYTES       = 64 * 1024;
 // ── Protocol constants (inamovibles - no cambiar directamente aquí) ───────────
