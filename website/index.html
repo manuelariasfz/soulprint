@@ -854,18 +854,35 @@
     } catch { return 0; }
   }
 
+  // ── Known validator nodes — ping each to count live ones ─────────────────
+  const KNOWN_VALIDATORS = [
+    "https://soulprint-node-production.up.railway.app",
+    "https://soulprint-validator-1-production.up.railway.app",
+    "https://soulprint-validator-2-production.up.railway.app",
+    "https://soulprint-validator-3-production.up.railway.app",
+  ];
+
+  async function countLiveNodes() {
+    const results = await Promise.allSettled(
+      KNOWN_VALIDATORS.map(url =>
+        fetch(url + "/info", { signal: AbortSignal.timeout(5000) })
+          .then(r => r.ok ? r.json() : null)
+          .catch(() => null)
+      )
+    );
+    return results.filter(r => r.status === "fulfilled" && r.value !== null).length;
+  }
+
   // ── Fetch all on-chain stats in parallel ──────────────────────────────────
   async function fetchAllChainStats() {
-    const [peersHex, mcpHex] = await Promise.all([
-      ethCall(PEER_REGISTRY, SIG_GET_ALL_PEERS, 1),
-      ethCall(MCP_REGISTRY,  SIG_TOTAL_MCPS,    2),
+    const [mcpHex, liveNodes] = await Promise.all([
+      ethCall(MCP_REGISTRY, SIG_TOTAL_MCPS, 2),
+      countLiveNodes(),
     ]);
-    // NullifierRegistry & ReputationRegistry addresses not yet in addresses.json
-    // They return 0 until deployed — show "—" gracefully
     return {
-      peerCount:  4, // 4 active validator nodes (raw on-chain count includes restart duplicates)
-      nulliCount: 0,   // will update once NullifierRegistry address is public
-      scoreCount: 0,   // will update once ReputationRegistry address is public
+      peerCount:  liveNodes, // real-time ping to each known validator
+      nulliCount: 0,
+      scoreCount: 0,
       mcpCount:   decodeUint256(mcpHex),
     };
   }
