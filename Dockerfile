@@ -2,7 +2,8 @@ FROM node:22-slim
 
 WORKDIR /app
 
-RUN npm install -g soulprint-network@0.4.5
+# v0.4.5 — fixed workspace:* deps, compatible with npm global install
+RUN npm install -g soulprint-network@0.4.5 --prefer-online
 
 ENV SOULPRINT_PORT=4888
 ENV PORT=4888
