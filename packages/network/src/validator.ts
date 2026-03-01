@@ -22,6 +22,7 @@ import {
   ChallengeRequest, ChallengeResponse,
 } from "./peer-challenge.js";
 import { handleCredentialRoute } from "./credentials/index.js";
+import { handleCedulaRoute } from "./credentials/registraduria.js";
 import { encryptGossip, decryptGossip } from "./crypto/gossip-cipher.js";
 import { selectGossipPeers, routingStats } from "./crypto/peer-router.js";
 import { NullifierConsensus, AttestationConsensus, StateSyncManager } from "./consensus/index.js";
@@ -1146,6 +1147,12 @@ export function startValidatorNode(port: number = PORT) {
     // ── Credential routes (email, phone, github) ───────────────────────────
     if (cleanUrl.startsWith("/credentials/")) {
       const handled = await handleCredentialRoute(req, res, url, credentialCtx);
+      if (handled) return;
+    }
+
+    // ── Registraduría cédula validation ────────────────────────────────────
+    if (cleanUrl.startsWith("/verify/cedula")) {
+      const handled = await handleCedulaRoute(req, res, url);
       if (handled) return;
     }
 
