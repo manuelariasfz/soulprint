@@ -65,7 +65,7 @@ export class PeerRegistryClient {
     cacheTTLMs?:  number;
   }) {
     this.address    = opts?.address    ?? PEER_REGISTRY_ADDRESS;
-    this.cacheTTLMs = opts?.cacheTTLMs ?? 5 * 60 * 1000;  // 5 min
+    this.cacheTTLMs = opts?.cacheTTLMs ?? 60 * 60 * 1000;  // 60 min
     const rpc       = opts?.rpc        ?? PEER_REGISTRY_RPC;
     this.provider   = new ethers.JsonRpcProvider(rpc);
 

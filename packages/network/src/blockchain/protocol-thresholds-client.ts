@@ -62,7 +62,7 @@ export class ProtocolThresholdsClient {
 
   constructor(opts?: { rpc?: string; address?: string; cacheTTLMs?: number }) {
     this.address    = opts?.address    ?? PROTOCOL_THRESHOLDS_ADDRESS;
-    this.cacheTTLMs = opts?.cacheTTLMs ?? 10 * 60 * 1000;   // 10 min
+    this.cacheTTLMs = opts?.cacheTTLMs ?? 60 * 60 * 1000;   // 60 min
     const rpc       = opts?.rpc        ?? PROTOCOL_THRESHOLDS_RPC;
     this.provider   = new ethers.JsonRpcProvider(rpc);
     this.contract   = new ethers.Contract(this.address, ABI, this.provider);
