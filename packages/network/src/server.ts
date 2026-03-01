@@ -6,8 +6,9 @@
  *  1. HTTP server (port 4888)    — clientes y legado
  *  2. libp2p P2P node (port 6888) — Kademlia DHT + GossipSub + mDNS
  */
-import { startValidatorNode, setP2PNode } from "./validator.js";
+import { startValidatorNode, setP2PNode, setPeerRegistryClient } from "./validator.js";
 import { createSoulprintP2PNode, MAINNET_BOOTSTRAP, stopP2PNode } from "./p2p.js";
+import { PeerRegistryClient } from "./blockchain/PeerRegistryClient.js";
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 const HTTP_PORT = parseInt(process.env.SOULPRINT_PORT     ?? "4888");
@@ -50,6 +51,44 @@ try {
   console.warn(`⚠️  P2P no disponible — solo HTTP gossip activo`);
   console.warn(`   Error: ${err?.message ?? String(err)}\n`);
 }
+
+// ─── On-chain PeerRegistry (auto-registro) ────────────────────────────────────
+const adminPrivateKey = process.env.ADMIN_PRIVATE_KEY;
+const peerRegistry = new PeerRegistryClient({
+  privateKey: adminPrivateKey,
+});
+setPeerRegistryClient(peerRegistry);
+
+// Register self after P2P is ready (non-blocking)
+setTimeout(async () => {
+  try {
+    if (!adminPrivateKey) {
+      console.warn("[peer-registry] ⚠️  ADMIN_PRIVATE_KEY not set — skipping on-chain registration");
+      return;
+    }
+    // Get node identity from validator (fetched via HTTP)
+    const infoRes = await fetch(`http://localhost:${HTTP_PORT}/health`, { signal: AbortSignal.timeout(5000) });
+    const info = await infoRes.json() as any;
+    // Get P2P multiaddr (first non-localhost if available)
+    let multiaddr = `http://localhost:${HTTP_PORT}`;
+    if (p2pNode) {
+      const addrs: string[] = p2pNode.getMultiaddrs().map((m: any) => m.toString());
+      const publicAddr = addrs.find(a => !a.includes("127.0.0.1") && !a.includes("/ip4/0.0.0.0"));
+      multiaddr = publicAddr ?? addrs[0] ?? multiaddr;
+    }
+    // Use node DID from keypair (read from health endpoint) and P2P peerId
+    const nodeDid  = (globalThis as any)._nodeDid   ?? `did:soulprint:node:${Date.now()}`;
+    const nodePeer = p2pNode?.peerId?.toString()     ?? "";
+    await peerRegistry.registerSelf({
+      peerDid:   nodeDid,
+      peerId:    nodePeer,
+      multiaddr,
+      score:     0,
+    });
+  } catch (e: any) {
+    console.warn(`[peer-registry] ⚠️  Could not register self: ${e.message}`);
+  }
+}, 3_000);
 
 // ─── HTTP Bootstrap Peers (auto-registro) ─────────────────────────────────────
 // SOULPRINT_BOOTSTRAP_HTTP=http://node1:4888,http://node2:4888

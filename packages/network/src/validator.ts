@@ -47,6 +47,10 @@ import {
   dialP2PPeer,
   type SoulprintP2PNode,
 } from "./p2p.js";
+import {
+  PeerRegistryClient,
+  type PeerEntry,
+} from "./blockchain/PeerRegistryClient.js";
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const PORT         = parseInt(process.env.SOULPRINT_PORT ?? String(PROTOCOL.DEFAULT_HTTP_PORT));
@@ -117,6 +121,13 @@ async function refreshThresholds() {
 
 // ── P2P Node (Phase 5) ────────────────────────────────────────────────────────
 let p2pNode: SoulprintP2PNode | null = null;
+
+// ── PeerRegistry Client ───────────────────────────────────────────────────────
+let peerRegistryClient: PeerRegistryClient | null = null;
+
+export function setPeerRegistryClient(client: PeerRegistryClient): void {
+  peerRegistryClient = client;
+}
 
 /**
  * Inyecta el nodo libp2p al validador.
@@ -915,6 +926,9 @@ export function startValidatorNode(port: number = PORT) {
   loadAudit();
   const nodeKeypair = loadOrCreateNodeKeypair();
 
+  // Expose DID globally so server.ts can use it for peer registration
+  (globalThis as any)._nodeDid = nodeKeypair.did;
+
   // ── Cargar thresholds desde blockchain al arrancar ────────────────────────
   // No bloqueante — el nodo arranca con valores locales y los actualiza async
   refreshThresholds().then(() => {
@@ -1082,11 +1096,36 @@ export function startValidatorNode(port: number = PORT) {
       });
     }
 
+    // GET /network/peers — all peers from on-chain PeerRegistry
+    if (cleanUrl === "/network/peers" && req.method === "GET") {
+      try {
+        const chainPeers = peerRegistryClient
+          ? await peerRegistryClient.getAllPeers()
+          : [];
+        return json(res, 200, {
+          ok:    true,
+          peers: chainPeers,
+          count: chainPeers.length,
+          contract: peerRegistryClient?.contractAddress ?? null,
+          timestamp: Date.now(),
+        });
+      } catch (err: any) {
+        return json(res, 500, { ok: false, error: err.message });
+      }
+    }
+
     // GET /network/stats — stats públicas para la landing page
     if (cleanUrl === "/network/stats" && req.method === "GET") {
       const p2pStats = p2pNode ? getP2PStats(p2pNode) : null;
       const httpPeers = peers.length;
       const libp2pPeers = p2pStats?.peers ?? 0;
+      let registeredPeers = 0;
+      try {
+        if (peerRegistryClient) {
+          const chainPeers = await peerRegistryClient.getAllPeers();
+          registeredPeers = chainPeers.length;
+        }
+      } catch { /* non-fatal */ }
       return json(res, 200, {
         node_did:            nodeKeypair.did.slice(0, 20) + "...",
         version:             VERSION,
@@ -1102,6 +1141,8 @@ export function startValidatorNode(port: number = PORT) {
         p2p_enabled:         !!p2pNode,
         // total = max de ambas capas (HTTP gossip es el piso mínimo garantizado)
         total_peers:         Math.max(httpPeers, libp2pPeers),
+        // on-chain registered peers (PeerRegistry)
+        registered_peers:    registeredPeers,
         // estado general
         uptime_ms:           Date.now() - ((globalThis as any)._startTime ?? Date.now()),
         timestamp:           Date.now(),
