@@ -817,7 +817,7 @@
   const PEER_REGISTRY = "0x452fb66159dFCfC13f2fD9627aA4c56886BfB15b";
 
   // getAllPeers() selector: keccak256("getAllPeers()")[0..4]
-  const GET_ALL_PEERS_SIG = "0x60d7a278";
+  const GET_ALL_PEERS_SIG = "0x2d62b810"; // keccak256("getAllPeers()")[0..4]
 
   async function fetchOnChainPeers() {
     try {
