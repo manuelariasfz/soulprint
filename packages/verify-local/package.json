@@ -35,8 +35,8 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "soulprint-core": "workspace:*",
-    "soulprint-zkp": "workspace:*",
+    "soulprint-core": "0.1.11",
+    "soulprint-zkp": "0.1.6",
     "tesseract.js": "^5.1.0",
     "sharp": "^0.33.3",
     "@noble/hashes": "^1.4.0"

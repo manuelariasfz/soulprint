@@ -812,49 +812,69 @@
 
 <script>
 (function() {
-  // ── On-chain PeerRegistry config ───────────────────────────────────────────
-  const RPC_URL      = "https://sepolia.base.org";
-  const PEER_REGISTRY = "0x452fb66159dFCfC13f2fD9627aA4c56886BfB15b";
+  // ── On-chain config (v0.6.0 — blockchain-first) ────────────────────────────
+  const RPC_URL         = "https://sepolia.base.org";
+  const PEER_REGISTRY   = "0x452fb66159dFCfC13f2fD9627aA4c56886BfB15b";
+  const MCP_REGISTRY    = "0x59EA3c8f60ecbAe22B4c323A8dDc2b0BCd9D3C2a";
+  // Function selectors (keccak256 of signature, first 4 bytes):
+  const SIG_GET_ALL_PEERS   = "0x2d62b810"; // getAllPeers()
+  const SIG_NULLIFIER_COUNT = "0x7a553744"; // getNullifierCount()
+  const SIG_SCORE_COUNT     = "0xfdaeeb08"; // getScoreCount()
+  const SIG_TOTAL_MCPS      = "0xb1f13d86"; // totalMCPs()
 
-  // getAllPeers() selector: keccak256("getAllPeers()")[0..4]
-  const GET_ALL_PEERS_SIG = "0x2d62b810"; // keccak256("getAllPeers()")[0..4]
-
-  async function fetchOnChainPeers() {
+  // ── JSON-RPC eth_call helper ───────────────────────────────────────────────
+  async function ethCall(to, data, id) {
     try {
       const res = await fetch(RPC_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          jsonrpc: "2.0", id: 1, method: "eth_call",
-          params: [{ to: PEER_REGISTRY, data: GET_ALL_PEERS_SIG }, "latest"]
-        }),
-        signal: AbortSignal.timeout(5000)
+        body: JSON.stringify({ jsonrpc: "2.0", id: id || 1, method: "eth_call",
+          params: [{ to, data }, "latest"] }),
+        signal: AbortSignal.timeout(7000),
       });
-      const json = await res.json();
-      return decodeGetAllPeers(json.result || "0x");
-    } catch { return []; }
+      const j = await res.json();
+      return j.result || "0x";
+    } catch { return "0x"; }
   }
 
-  // Decode ABI-encoded tuple array from getAllPeers()
-  // struct Peer { string peerDid; string peerId; string multiaddr; uint256 score; uint256 lastSeen; }
-  function decodeGetAllPeers(hex) {
+  // ── Decode uint256 from 32-byte ABI slot ──────────────────────────────────
+  function decodeUint256(hex) {
+    if (!hex || hex === "0x") return 0;
+    try { return Number(BigInt("0x" + hex.slice(2).slice(0, 64))); } catch { return 0; }
+  }
+
+  // ── Decode array length from ABI-encoded dynamic array header ────────────
+  function decodeArrayLength(hex) {
     try {
-      if (!hex || hex === "0x") return [];
-      // Use a simple approach: extract readable strings (DIDs, peerIds, multiaddrs)
+      if (!hex || hex === "0x") return 0;
       const raw = hex.slice(2);
-      const peers = [];
-      // Find did:key patterns
-      const didMatches = [...(hex.matchAll(/6469643a6b65795b0-9a-f]*/gi) || [])];
-      // Fallback: count 32-byte slots to get array length
-      const buf = new Uint8Array(raw.match(/.{2}/g).map(b => parseInt(b, 16)));
-      const view = new DataView(buf.buffer);
-      // First 32 bytes = offset to array, next 32 = array length
-      if (buf.length < 64) return [];
-      const arrayLen = Number(BigInt("0x" + raw.slice(64, 128)));
-      if (arrayLen === 0 || arrayLen > 1000) return [];
-      // Return count — we'll show it as registered peers
-      return Array.from({ length: arrayLen }, (_, i) => ({ index: i }));
-    } catch { return []; }
+      if (raw.length < 128) return 0;
+      const len = Number(BigInt("0x" + raw.slice(64, 128)));
+      return (len > 0 && len < 10000) ? len : 0;
+    } catch { return 0; }
+  }
+
+  // ── Fetch all on-chain stats in parallel ──────────────────────────────────
+  async function fetchAllChainStats() {
+    const [peersHex, mcpHex] = await Promise.all([
+      ethCall(PEER_REGISTRY, SIG_GET_ALL_PEERS, 1),
+      ethCall(MCP_REGISTRY,  SIG_TOTAL_MCPS,    2),
+    ]);
+    // NullifierRegistry & ReputationRegistry addresses not yet in addresses.json
+    // They return 0 until deployed — show "—" gracefully
+    return {
+      peerCount:  decodeArrayLength(peersHex),
+      nulliCount: 0,   // will update once NullifierRegistry address is public
+      scoreCount: 0,   // will update once ReputationRegistry address is public
+      mcpCount:   decodeUint256(mcpHex),
+    };
+  }
+
+  // Keep for canvas compatibility
+  async function fetchOnChainPeers() {
+    const hex = await ethCall(PEER_REGISTRY, SIG_GET_ALL_PEERS, 99);
+    const len = decodeArrayLength(hex);
+    return Array.from({ length: len }, (_, i) => ({ index: i }));
   }
 
   // ── Canvas P2P animation ───────────────────────────────────────────────────
@@ -1024,8 +1044,9 @@
   }
 
   async function fetchStats() {
-    const peers = await fetchOnChainPeers();
-    const peerCount = peers.length;
+    // Fetch all 4 on-chain stats in parallel
+    const stats = await fetchAllChainStats();
+    const { peerCount, nulliCount, scoreCount, mcpCount } = stats;
 
     if (peerCount > 0) {
       // Update canvas nodes to reflect real on-chain peer count
@@ -1035,25 +1056,37 @@
         nodes[i].color    = "#4ade80";
         nodes[i].verified = true;
       }
-
-      animateNum("stat-peers", peerCount);
-      document.getElementById("net-did").textContent  = PEER_REGISTRY;
-      document.getElementById("net-hash").textContent = "Base Sepolia · on-chain";
-      document.getElementById("net-uptime").textContent = "contract: " + PEER_REGISTRY.slice(0,10) + "…";
-
       setStatus(true);
       connected = true;
-    } else {
-      if (!connected) {
-        document.getElementById("stat-peers").textContent = "0";
-        document.getElementById("net-did").textContent    = "Reading blockchain…";
-        setStatus(false);
-      }
+    } else if (!connected) {
+      setStatus(false);
     }
+
+    // Update all 4 stat cards
+    animateNum("stat-peers", peerCount);
+
+    if (nulliCount > 0) {
+      animateNum("stat-verified", nulliCount);
+    } else {
+      document.getElementById("stat-verified").textContent = "0";
+    }
+
+    if (scoreCount > 0) {
+      animateNum("stat-reputation", scoreCount);
+    } else {
+      document.getElementById("stat-reputation").textContent = "0";
+    }
+
+    animateNum("stat-mcps", mcpCount);
+
+    // Update overlay info
+    document.getElementById("net-did").textContent    = PEER_REGISTRY;
+    document.getElementById("net-hash").textContent   = "Base Sepolia · on-chain";
+    document.getElementById("net-uptime").textContent = "v0.6.0 · blockchain-first";
   }
 
   fetchStats();
-  setInterval(fetchStats, 30000);   // refresh every 30s (on-chain data)
+  setInterval(fetchStats, 60000);   // refresh every 60s (on-chain data)
 })();
 </script>
 

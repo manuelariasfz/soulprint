@@ -1,7 +1,7 @@
 {
   "name": "soulprint-network",
-  "version": "0.5.1",
-  "description": "Soulprint validator node \u2014 HTTP server that verifies ZK proofs, co-signs SPTs, anti-Sybil registry",
+  "version": "0.6.0",
+  "description": "Soulprint validator node — HTTP server that verifies ZK proofs, co-signs SPTs, anti-Sybil registry",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
@@ -35,25 +35,12 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "@chainsafe/libp2p-gossipsub": "14.1.2",
-    "@chainsafe/libp2p-noise": "16.1.5",
-    "@chainsafe/libp2p-yamux": "7.0.4",
-    "@libp2p/bootstrap": "11.0.47",
-    "@libp2p/identify": "3.0.39",
-    "@libp2p/kad-dht": "16.1.3",
-    "@libp2p/mdns": "11.0.47",
-    "@libp2p/peer-id": "^6.0.4",
-    "@libp2p/ping": "2.0.37",
-    "@libp2p/tcp": "10.1.19",
-    "@multiformats/multiaddr": "^13.0.1",
     "ethers": "^6.16.0",
-    "libp2p": "2.10.0",
     "nodemailer": "^8.0.1",
     "otpauth": "^9.5.0",
     "otplib": "^13.3.0",
     "soulprint-core": "0.1.11",
-    "soulprint-zkp": "0.1.6",
-    "uint8arrays": "5.1.0"
+    "soulprint-zkp": "0.1.6"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

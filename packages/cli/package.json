@@ -35,9 +35,9 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "soulprint-core": "workspace:*",
-    "soulprint-verify": "workspace:*",
-    "soulprint-network": "workspace:*"
+    "soulprint-core": "0.1.11",
+    "soulprint-verify": "0.1.6",
+    "soulprint-network": "0.5.1"
   },
   "devDependencies": {
     "typescript": "^5.4.0",

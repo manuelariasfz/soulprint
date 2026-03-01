@@ -43,13 +43,6 @@ import {
   getRegistryInfo, verifyMCPOnChain, revokeMCPOnChain, registerMCPOnChain,
 } from "./mcp-registry-client.js";
 import {
-  publishAttestationP2P,
-  onAttestationReceived,
-  getP2PStats,
-  dialP2PPeer,
-  type SoulprintP2PNode,
-} from "./p2p.js";
-import {
   PeerRegistryClient,
   type PeerEntry,
 } from "./blockchain/PeerRegistryClient.js";
@@ -68,7 +61,7 @@ const NULLIFIER_DB = join(NODE_DIR, "nullifiers.json");
 const REPUTE_DB    = join(NODE_DIR, "reputation.json");
 const PEERS_DB     = join(NODE_DIR, "peers.json");
 const AUDIT_DB     = join(NODE_DIR, "audit.json");
-const VERSION      = "0.5.0";
+const VERSION      = "0.6.0";
 
 const MAX_BODY_BYTES       = 64 * 1024;
 // ── Protocol constants (inamovibles - no cambiar directamente aquí) ───────────
@@ -127,9 +120,6 @@ async function refreshThresholds() {
   } catch { /* usa los valores actuales */ }
 }
 
-// ── P2P Node (Phase 5) ────────────────────────────────────────────────────────
-let p2pNode: SoulprintP2PNode | null = null;
-
 // ── PeerRegistry Client ───────────────────────────────────────────────────────
 let peerRegistryClient: PeerRegistryClient | null = null;
 
@@ -156,29 +146,6 @@ export function getReputationRegistry(): ReputationRegistryClient | null {
   return reputationRegistry;
 }
 
-/**
- * Inyecta el nodo libp2p al validador.
- * Cuando se llama:
- *  1. Se registra el handler de attestations entrantes por GossipSub
- *  2. Desde ese momento, gossipAttestation() también publica por P2P
- */
-export function setP2PNode(node: SoulprintP2PNode): void {
-  p2pNode = node;
-
-  // Recibir attestations de otros nodos via GossipSub
-  onAttestationReceived(node, (att, fromPeer) => {
-    // Validar firma antes de aplicar
-    if (!verifyAttestation(att)) {
-      console.warn(`[p2p] Attestation inválida de peer ${fromPeer.slice(0, 16)}... - descartada`);
-      return;
-    }
-    // Anti-replay ya está dentro de applyAttestation()
-    applyAttestation(att);
-    console.log(`[p2p] Attestation recibida de peer ${fromPeer.slice(0, 16)}... → ${att.target_did.slice(0, 20)}... (${att.value > 0 ? "+" : ""}${att.value})`);
-  });
-
-  console.log(`[p2p] P2P integrado → ${node.peerId.toString().slice(0, 16)}...`);
-}
 
 // ── Rate limiter ──────────────────────────────────────────────────────────────
 const rateLimits = new Map<string, { count: number; resetAt: number }>();
@@ -317,26 +284,10 @@ function loadPeers() {
 function savePeers() { writeFileSync(PEERS_DB, JSON.stringify(peers, null, 2)); }
 
 /**
- * Gossip: propaga la attestation a la red.
- *
- * Estrategia:
- *  1. P2P GossipSub (Phase 5) - si el nodo libp2p está activo
- *  2. HTTP fire-and-forget (Phase 3) - fallback para nodos legacy sin libp2p
- *
- * Ambos canales son fire-and-forget: no bloquean la respuesta al cliente.
+ * Gossip: propaga la attestation a la red via HTTP fire-and-forget.
  */
 async function gossipAttestation(att: BotAttestation, excludeUrl?: string) {
-  // ── Canal 1: libp2p GossipSub ─────────────────────────────────────────────
-  if (p2pNode) {
-    const recipients = await publishAttestationP2P(p2pNode, att);
-    if (recipients > 0) {
-      console.log(`[p2p] Attestation publicada → ${recipients} peer(s) via GossipSub`);
-    }
-  }
-
-  // ── Canal 2: HTTP gossip con cifrado AES-256-GCM + XOR routing ────────────
-  // Selección de peers: XOR routing hacia el DID objetivo → O(log n)
-  // Con ≤10 peers: broadcast total. Con más: solo K=6 más cercanos.
+  // HTTP gossip con cifrado AES-256-GCM + XOR routing
   const targets = selectGossipPeers(peers, att.target_did, excludeUrl);
 
   if (targets.length < peers.length - (excludeUrl ? 1 : 0)) {
@@ -406,27 +357,30 @@ function getIP(req: IncomingMessage): string {
 
 // ── GET /info ─────────────────────────────────────────────────────────────────
 function handleInfo(res: ServerResponse, nodeKeypair: SoulprintKeypair) {
-  const p2pStats = p2pNode ? getP2PStats(p2pNode) : null;
+  const addresses = (() => {
+    try {
+      const { default: addrs } = require("./blockchain/addresses.json");
+      return addrs;
+    } catch { return {}; }
+  })();
 
   json(res, 200, {
     node_did:            nodeKeypair.did,
     version:             VERSION,
     protocol:            PROTOCOL.VERSION,
-    protocol_hash:       PROTOCOL_HASH,   // ← cualquier modificación cambia este hash
+    protocol_hash:       PROTOCOL_HASH,
+    network:             "base-sepolia",
+    contracts: {
+      PeerRegistry:        "0x452fb66159dFCfC13f2fD9627aA4c56886BfB15b",
+      NullifierRegistry:   addresses?.NullifierRegistry ?? "",
+      ReputationRegistry:  addresses?.ReputationRegistry ?? "",
+    },
     total_verified:      Object.keys(nullifiers).length,
     total_reputation:    Object.keys(repStore).length,
     known_peers:         peers.length,
     supported_countries: ["CO"],
-    capabilities:        ["zk-verify", "anti-sybil", "co-sign", "bot-reputation", "p2p-gossipsub", "credential-validators", "anti-farming"],
+    capabilities:        ["zk-verify", "anti-sybil", "co-sign", "bot-reputation", "registraduria-validation", "on-chain-state"],
     rate_limit:          `${PROTOCOL.RATE_LIMIT_MAX} req/min per IP`,
-    // P2P stats (Phase 5)
-    p2p: p2pStats ? {
-      enabled:      true,
-      peer_id:      p2pStats.peerId,
-      peers:        p2pStats.peers,
-      pubsub_peers: p2pStats.pubsubPeers,
-      multiaddrs:   p2pStats.multiaddrs,
-    } : { enabled: false },
   });
 }
 
@@ -720,27 +674,6 @@ async function handlePeerRegister(req: IncomingMessage, res: ServerResponse) {
 
   peers.push(url);
   savePeers();
-
-  // ── Auto-dial libp2p layer ──────────────────────────────────────────────────
-  // WSL2 / NAT: mDNS no funciona → al registrar un peer HTTP, intentamos
-  // conectar también vía libp2p usando sus multiaddrs del /info endpoint.
-  if (p2pNode) {
-    setImmediate(async () => {
-      try {
-        const infoRes = await fetch(`${url}/info`, { signal: AbortSignal.timeout(3_000) });
-        if (infoRes.ok) {
-          const info = await infoRes.json() as any;
-          const addrs: string[] = info?.p2p?.multiaddrs ?? [];
-          let dialed = false;
-          for (const ma of addrs) {
-            const ok = await dialP2PPeer(p2pNode!, ma);
-            if (ok) { console.log(`[peer] 🔗 P2P dial OK: ${ma}`); dialed = true; break; }
-          }
-          if (!dialed) console.log(`[peer] ℹ️  P2P dial failed for ${url} (mDNS fallback)`);
-        }
-      } catch { /* non-critical — HTTP gossip is the fallback */ }
-    });
-  }
 
   json(res, 200, { ok: true, peers: peers.length, protocol_hash: PROTOCOL_HASH });
 }
@@ -1200,9 +1133,7 @@ export function startValidatorNode(port: number = PORT) {
 
     // GET /network/stats — stats públicas para la landing page
     if (cleanUrl === "/network/stats" && req.method === "GET") {
-      const p2pStats = p2pNode ? getP2PStats(p2pNode) : null;
       const httpPeers = peers.length;
-      const libp2pPeers = p2pStats?.peers ?? 0;
       let registeredPeers = 0;
       let nullifiersOnchain = 0;
       let reputationOnchain = 0;
@@ -1222,25 +1153,24 @@ export function startValidatorNode(port: number = PORT) {
         node_did:            nodeKeypair.did.slice(0, 20) + "...",
         version:             VERSION,
         protocol_hash:       PROTOCOL_HASH.slice(0, 16) + "...",
+        network:             "base-sepolia",
+        contracts: {
+          PeerRegistry:       "0x452fb66159dFCfC13f2fD9627aA4c56886BfB15b",
+        },
         // identidades y reputación (in-memory cache)
         verified_identities: Object.keys(nullifiers).length,
         reputation_profiles: Object.keys(repStore).length,
-        // on-chain state (v0.5.0) — blockchain IS the shared state
+        // on-chain state (v0.6.0) — blockchain IS the shared state
         nullifiers_onchain:  nullifiersOnchain,
         reputation_onchain:  reputationOnchain,
-        // peers — HTTP gossip
+        // peers
         known_peers:         httpPeers,
-        // peers — libp2p P2P
-        p2p_peers:           libp2pPeers,
-        p2p_pubsub_peers:    p2pStats?.pubsubPeers ?? 0,
-        p2p_enabled:         !!p2pNode,
-        total_peers:         Math.max(httpPeers, libp2pPeers),
-        // on-chain registered peers (PeerRegistry)
         registered_peers:    registeredPeers,
-        // state sync (v0.5.0 — blockchain is source of truth)
+        total_peers:         Math.max(httpPeers, registeredPeers),
+        // state sync
         state_hash:          computeHash(Object.keys(nullifiers)).slice(0, 16) + "...",
         last_sync:           lastSyncTs,
-        // estado general
+        // general
         uptime_ms:           Date.now() - ((globalThis as any)._startTime ?? Date.now()),
         timestamp:           Date.now(),
         mcps_verified:       null,

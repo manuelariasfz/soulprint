@@ -31,7 +31,7 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "soulprint-core": "workspace:*"
+    "soulprint-core": "0.1.11"
   },
   "peerDependencies": {
     "@modelcontextprotocol/sdk": ">=1.0.0"

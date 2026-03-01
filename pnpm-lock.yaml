@@ -45,14 +45,14 @@ importers:
   packages/cli:
     dependencies:
       soulprint-core:
-        specifier: workspace:*
-        version: link:../core
+        specifier: 0.1.11
+        version: 0.1.11
       soulprint-network:
-        specifier: workspace:*
-        version: link:../network
+        specifier: 0.5.1
+        version: 0.5.1
       soulprint-verify:
-        specifier: workspace:*
-        version: link:../verify-local
+        specifier: 0.1.6
+        version: 0.1.6
     devDependencies:
       '@types/node':
         specifier: ^20.0.0
@@ -86,8 +86,8 @@ importers:
         specifier: '>=4.0.0'
         version: 5.2.1
       soulprint-core:
-        specifier: workspace:*
-        version: link:../core
+        specifier: 0.1.11
+        version: 0.1.11
     devDependencies:
       '@types/express':
         specifier: ^4.17.0
@@ -105,8 +105,8 @@ importers:
         specifier: '>=1.0.0'
         version: 1.27.0(zod@4.3.6)
       soulprint-core:
-        specifier: workspace:*
-        version: link:../core
+        specifier: 0.1.11
+        version: 0.1.11
     devDependencies:
       '@types/node':
         specifier: ^20.0.0
@@ -117,45 +117,9 @@ importers:
 
   packages/network:
     dependencies:
-      '@chainsafe/libp2p-gossipsub':
-        specifier: 14.1.2
-        version: 14.1.2
-      '@chainsafe/libp2p-noise':
-        specifier: 16.1.5
-        version: 16.1.5
-      '@chainsafe/libp2p-yamux':
-        specifier: 7.0.4
-        version: 7.0.4
-      '@libp2p/bootstrap':
-        specifier: 11.0.47
-        version: 11.0.47
-      '@libp2p/identify':
-        specifier: 3.0.39
-        version: 3.0.39
-      '@libp2p/kad-dht':
-        specifier: 16.1.3
-        version: 16.1.3
-      '@libp2p/mdns':
-        specifier: 11.0.47
-        version: 11.0.47
-      '@libp2p/peer-id':
-        specifier: ^6.0.4
-        version: 6.0.4
-      '@libp2p/ping':
-        specifier: 2.0.37
-        version: 2.0.37
-      '@libp2p/tcp':
-        specifier: 10.1.19
-        version: 10.1.19
-      '@multiformats/multiaddr':
-        specifier: ^13.0.1
-        version: 13.0.1
       ethers:
         specifier: ^6.16.0
         version: 6.16.0
-      libp2p:
-        specifier: 2.10.0
-        version: 2.10.0
       nodemailer:
         specifier: ^8.0.1
         version: 8.0.1
@@ -166,14 +130,11 @@ importers:
         specifier: ^13.3.0
         version: 13.3.0
       soulprint-core:
-        specifier: workspace:*
-        version: link:../core
+        specifier: 0.1.11
+        version: 0.1.11
       soulprint-zkp:
-        specifier: workspace:*
-        version: link:../zkp
-      uint8arrays:
-        specifier: 5.1.0
-        version: 5.1.0
+        specifier: 0.1.6
+        version: 0.1.6
     devDependencies:
       '@types/node':
         specifier: ^20.0.0
@@ -194,11 +155,11 @@ importers:
         specifier: ^0.33.3
         version: 0.33.5
       soulprint-core:
-        specifier: workspace:*
-        version: link:../core
+        specifier: 0.1.11
+        version: 0.1.11
       soulprint-zkp:
-        specifier: workspace:*
-        version: link:../zkp
+        specifier: 0.1.6
+        version: 0.1.6
       tesseract.js:
         specifier: ^5.1.0
         version: 5.1.1
@@ -222,8 +183,8 @@ importers:
         specifier: ^0.7.4
         version: 0.7.6
       soulprint-core:
-        specifier: workspace:*
-        version: link:../core
+        specifier: 0.1.11
+        version: 0.1.11
     devDependencies:
       '@types/node':
         specifier: ^20.0.0
@@ -2911,6 +2872,27 @@ packages:
     hasBin: true
     peerDependencies:
       hardhat: ^2.11.0
+
+  soulprint-core@0.1.11:
+    resolution: {integrity: sha512-V3KxyGIwci6ZRcGIOJbF2S5Pq32TgODxpY9p2XNgZgRIjxyFjJGQZoaVAjN8sMWoKAL/FEVg8mUbc6t6qlj0rg==}
+    engines: {node: '>=18.0.0'}
+
+  soulprint-network@0.5.1:
+    resolution: {integrity: sha512-xYRPo5mZXj7Kj5uuU0q20ZK7hTJuTdcem5R2S8qS7ZLeOIIrVesJ/+z8WwMtBDDBHK840hxhOK77cxpaU7pATA==}
+    engines: {node: '>=18.0.0'}
+    hasBin: true
+
+  soulprint-verify@0.1.6:
+    resolution: {integrity: sha512-qP7mOEvdJYGOpr1RnzyvLq7eVF7aSx4iZsgqdZge0reGlAqkFG/IQpNtBajQymfD9MebNRau4Bk73ZuA5oTqfA==}
+    engines: {node: '>=18.0.0'}
+
+  soulprint-zkp@0.1.5:
+    resolution: {integrity: sha512-hWyOfr3kXTH3CzzcfEWA6GkIq7ufLD0+FpoVGbeWDBBn6NHruhauTWfbJ+J+GtYIxc3KNoEpYNX9UCz1TCFrRg==}
+    engines: {node: '>=18.0.0'}
+
+  soulprint-zkp@0.1.6:
+    resolution: {integrity: sha512-J9MTW7xZf5gs4/fh06sNSxvNpOqV5O9sAWhCbDWzoQDpJu/3Z4xxzWezYh2uQIhSyYB7I7i3dXp3dHSjymeEvA==}
+    engines: {node: '>=18.0.0'}
 
   source-map-support@0.5.21:
     resolution: {integrity: sha512-uBHU3L3czsIyYXKX88fdrGovxdSCoTGDRZ6SYXtSRxLZUzHg5P/66Ht6uoUlHu9EZod+inXhKo3qQgwXUT/y1w==}
@@ -6801,6 +6783,73 @@ snapshots:
       semver: 7.7.4
       shelljs: 0.8.5
       web3-utils: 1.10.4
+
+  soulprint-core@0.1.11:
+    dependencies:
+      '@noble/curves': 1.9.7
+      '@noble/hashes': 1.8.0
+      bs58: 6.0.0
+
+  soulprint-network@0.5.1:
+    dependencies:
+      '@chainsafe/libp2p-gossipsub': 14.1.2
+      '@chainsafe/libp2p-noise': 16.1.5
+      '@chainsafe/libp2p-yamux': 7.0.4
+      '@libp2p/bootstrap': 11.0.47
+      '@libp2p/identify': 3.0.39
+      '@libp2p/kad-dht': 16.1.3
+      '@libp2p/mdns': 11.0.47
+      '@libp2p/peer-id': 6.0.4
+      '@libp2p/ping': 2.0.37
+      '@libp2p/tcp': 10.1.19
+      '@multiformats/multiaddr': 13.0.1
+      ethers: 6.16.0
+      libp2p: 2.10.0
+      nodemailer: 8.0.1
+      otpauth: 9.5.0
+      otplib: 13.3.0
+      soulprint-core: 0.1.11
+      soulprint-zkp: 0.1.6
+      uint8arrays: 5.1.0
+    transitivePeerDependencies:
+      - bufferutil
+      - react-native-b4a
+      - utf-8-validate
+
+  soulprint-verify@0.1.6:
+    dependencies:
+      '@noble/hashes': 1.8.0
+      sharp: 0.33.5
+      soulprint-core: 0.1.11
+      soulprint-zkp: 0.1.5
+      tesseract.js: 5.1.1
+    transitivePeerDependencies:
+      - bufferutil
+      - encoding
+      - react-native-b4a
+      - utf-8-validate
+
+  soulprint-zkp@0.1.5:
+    dependencies:
+      circomlibjs: 0.1.7
+      ffjavascript: 0.3.1
+      snarkjs: 0.7.6
+      soulprint-core: link:packages/core
+    transitivePeerDependencies:
+      - bufferutil
+      - react-native-b4a
+      - utf-8-validate
+
+  soulprint-zkp@0.1.6:
+    dependencies:
+      circomlibjs: 0.1.7
+      ffjavascript: 0.3.1
+      snarkjs: 0.7.6
+      soulprint-core: 0.1.11
+    transitivePeerDependencies:
+      - bufferutil
+      - react-native-b4a
+      - utf-8-validate
 
   source-map-support@0.5.21:
     dependencies:
