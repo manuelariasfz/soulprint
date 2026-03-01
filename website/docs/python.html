@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Python SDK — Soulprint Docs</title>
+<meta name="description" content="Use Soulprint identity verification in Python — async client, FastAPI middleware, Django middleware. Verify Colombian cédulas and AI agent DIDs.">
+<link rel="stylesheet" href="shared.css">
+</head>
+<body>
+<div class="topbar">
+  <a href="/" class="topbar-logo">🌀 Soulprint</a>
+  <div class="topbar-links">
+    <a href="https://github.com/manuelariasfz/soulprint">GitHub</a>
+    <a href="https://pypi.org/project/soulprint-py/">PyPI</a>
+    <a href="/">Home</a>
+  </div>
+</div>
+<div class="docs-layout">
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#7c6cf5"/><stop offset="100%" stop-color="#a78bfa"/>
+        </linearGradient></defs>
+        <circle cx="32" cy="26" r="18" fill="url(#g)"/>
+        <rect x="14" y="26" width="36" height="20" fill="url(#g)"/>
+        <circle cx="19" cy="48" r="5.5" fill="url(#g)"/>
+        <circle cx="32" cy="49" r="5.5" fill="url(#g)"/>
+        <circle cx="45" cy="48" r="5.5" fill="url(#g)"/>
+        <ellipse cx="25" cy="25" rx="4.5" ry="3" fill="#0a0a0f"/>
+        <ellipse cx="25" cy="25" rx="2.5" ry="1.8" fill="#ffffff"/>
+        <ellipse cx="39" cy="25" rx="4.5" ry="3" fill="#0a0a0f"/>
+        <ellipse cx="39" cy="25" rx="2.5" ry="1.8" fill="#ffffff"/>
+      </svg>
+      <span class="sidebar-logo-text">Soulprint Docs</span>
+    </div>
+    <nav>
+      <div class="sidebar-section">Getting Started</div>
+      <a href="index.html">Overview</a>
+      <a href="quickstart.html">Quick Start</a>
+      <div class="sidebar-section">Core Concepts</div>
+      <a href="verify.html">Identity Verification</a>
+      <a href="trust-score.html">Trust Score (0–100)</a>
+      <div class="sidebar-section">Integrations</div>
+      <a href="mcp.html">MCP Servers</a>
+      <a href="openclaw.html">OpenClaw Bots</a>
+      <a href="python.html" class="active">Python SDK</a>
+      <div class="sidebar-section">Infrastructure</div>
+      <a href="validator.html">Validator Node</a>
+      <a href="api.html">REST API Reference</a>
+      <div class="sidebar-section">Ecosystem</div>
+      <a href="countries.html">Country Support</a>
+    </nav>
+  </aside>
+  <main class="content">
+    <div class="doc-hero">
+      <h1>🐍 Python SDK</h1>
+      <p class="doc-hero-sub">Verify human identity and Colombian cédulas from any Python app — async client, FastAPI & Django middleware included.</p>
+    </div>
+
+    <div class="doc-body">
+
+      <h2>Installation</h2>
+      <pre><code>pip install soulprint-py</code></pre>
+      <p>With FastAPI extras:</p>
+      <pre><code>pip install "soulprint-py[fastapi]"</code></pre>
+
+      <div class="callout callout-info">
+        <strong>Requires Python 3.9+</strong> and <code>httpx</code> for async HTTP.
+      </div>
+
+      <h2>Quick Start</h2>
+      <pre><code><span class="keyword">import</span> asyncio
+<span class="keyword">from</span> soulprint <span class="keyword">import</span> SoulprintClient
+
+client = SoulprintClient(
+    node_url=<span class="string">"https://soulprint-node-production.up.railway.app"</span>
+)
+
+<span class="keyword">async def</span> <span class="function">main</span>():
+    <span class="comment"># Verify a DID</span>
+    result = <span class="keyword">await</span> client.verify(<span class="string">"did:soulprint:0xabc..."</span>)
+    print(f<span class="string">"Human: {result.is_human}  Score: {result.score}/100"</span>)
+
+    <span class="comment"># Verify a Colombian cédula against Registraduría</span>
+    cedula = <span class="keyword">await</span> client.verify_cedula(<span class="string">"1234567890"</span>, <span class="string">"1990-01-15"</span>)
+    print(f<span class="string">"Vigente: {cedula.vigente}"</span>)
+
+    <span class="comment"># Network stats</span>
+    stats = <span class="keyword">await</span> client.network_stats()
+    print(f<span class="string">"Active nodes: {stats.active_nodes}"</span>)
+
+asyncio.run(main())</code></pre>
+
+      <h2>SoulprintClient Reference</h2>
+
+      <h3>Constructor</h3>
+      <pre><code>client = SoulprintClient(
+    node_url: str = <span class="string">"https://soulprint-node-production.up.railway.app"</span>,
+    timeout: float = <span class="number">10.0</span>,   <span class="comment"># seconds</span>
+)</code></pre>
+
+      <h3>Methods</h3>
+
+      <table class="doc-table">
+        <thead><tr><th>Method</th><th>Returns</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><code>verify(did)</code></td>
+            <td><code>VerifyResult</code></td>
+            <td>Check if a DID belongs to a verified human</td>
+          </tr>
+          <tr>
+            <td><code>verify_cedula(numero, fecha_nac)</code></td>
+            <td><code>CedulaResult</code></td>
+            <td>Check cédula against Registraduría Nacional (Colombia)</td>
+          </tr>
+          <tr>
+            <td><code>network_stats()</code></td>
+            <td><code>NetworkStats</code></td>
+            <td>Live stats: active nodes, verified identities, MCPs</td>
+          </tr>
+          <tr>
+            <td><code>info()</code></td>
+            <td><code>NodeInfo</code></td>
+            <td>Node version, network, contracts, capabilities</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Return types</h3>
+      <pre><code><span class="comment"># VerifyResult</span>
+result.is_human: bool
+result.score: int        <span class="comment"># 0–100</span>
+result.node_did: str
+result.verified_at: datetime
+
+<span class="comment"># CedulaResult</span>
+result.vigente: bool
+result.status: str       <span class="comment"># "VIGENTE" | "NO VIGENTE" | "ERROR"</span>
+result.numero: str
+
+<span class="comment"># NetworkStats</span>
+stats.active_nodes: int
+stats.verified_identities: int
+stats.verified_mcps: int
+
+<span class="comment"># NodeInfo</span>
+info.version: str
+info.node_did: str
+info.network: str        <span class="comment"># "base-sepolia"</span>
+info.capabilities: list[str]</code></pre>
+
+      <h2>FastAPI Middleware</h2>
+      <pre><code><span class="keyword">from</span> fastapi <span class="keyword">import</span> FastAPI, Request
+<span class="keyword">from</span> soulprint.fastapi <span class="keyword">import</span> require_human
+
+app = FastAPI()
+
+<span class="decorator">@app.post</span>(<span class="string">"/api/sensitive"</span>)
+<span class="decorator">@require_human</span>(
+    min_score=<span class="number">80</span>,
+    node_url=<span class="string">"https://soulprint-node-production.up.railway.app"</span>
+)
+<span class="keyword">async def</span> <span class="function">sensitive_endpoint</span>(request: Request):
+    did   = request.state.soulprint_did
+    score = request.state.soulprint_score
+    <span class="keyword">return</span> {<span class="string">"did"</span>: did, <span class="string">"score"</span>: score}</code></pre>
+
+      <p>Token read from (in order):</p>
+      <ol>
+        <li><code>X-Soulprint-Token</code> header</li>
+        <li><code>Authorization: Bearer &lt;token&gt;</code> header</li>
+      </ol>
+
+      <h2>Django Middleware</h2>
+      <pre><code><span class="comment"># settings.py</span>
+MIDDLEWARE = [
+    ...
+    <span class="string">"soulprint.django.SoulprintMiddleware"</span>,
+]
+
+SOULPRINT_NODE_URL    = <span class="string">"https://soulprint-node-production.up.railway.app"</span>
+SOULPRINT_MIN_SCORE   = <span class="number">50</span>
+SOULPRINT_EXEMPT_PATHS = [<span class="string">"/health"</span>, <span class="string">"/"</span>]</code></pre>
+
+      <p>Verified attributes on <code>request</code>:</p>
+      <ul>
+        <li><code>request.soulprint_did</code></li>
+        <li><code>request.soulprint_score</code></li>
+      </ul>
+
+      <h2>Error Handling</h2>
+      <pre><code><span class="keyword">from</span> soulprint.exceptions <span class="keyword">import</span> (
+    SoulprintError,
+    NodeUnavailableError,
+    UnauthorizedError,
+    VerificationError,
+)
+
+<span class="keyword">try</span>:
+    result = <span class="keyword">await</span> client.verify(<span class="string">"did:soulprint:0x..."</span>)
+<span class="keyword">except</span> NodeUnavailableError <span class="keyword">as</span> e:
+    print(f<span class="string">"Node down: {e.node_url}"</span>)
+<span class="keyword">except</span> SoulprintError <span class="keyword">as</span> e:
+    print(f<span class="string">"Error: {e}"</span>)</code></pre>
+
+      <h2>Verify cédula colombiana</h2>
+      <pre><code>cedula = <span class="keyword">await</span> client.verify_cedula(
+    numero=<span class="string">"1234567890"</span>,
+    fecha_nac=<span class="string">"1990-01-15"</span>   <span class="comment"># YYYY-MM-DD</span>
+)
+
+<span class="keyword">if</span> cedula.vigente:
+    print(<span class="string">"✅ Cédula vigente — identidad confirmada"</span>)
+<span class="keyword">else</span>:
+    print(<span class="string">"❌ Cédula no vigente o no encontrada"</span>)</code></pre>
+
+      <div class="callout callout-warning">
+        <strong>Graceful degradation:</strong> si la Registraduría no responde, el validador retorna <code>vigente=false, status="ERROR"</code> sin bloquear. Maneja este caso en tu app.
+      </div>
+
+      <h2>Source Code</h2>
+      <p>
+        <a href="https://github.com/manuelariasfz/soulprint/tree/main/packages/python" target="_blank">
+          github.com/manuelariasfz/soulprint/packages/python ↗
+        </a>
+      </p>
+
+    </div>
+  </main>
+</div>
+</body>
+</html>
