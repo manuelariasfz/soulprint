@@ -761,7 +761,7 @@
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1rem;margin-top:1.5rem">
     <div class="net-card">
       <div id="stat-peers" class="net-num">—</div>
-      <div class="net-lbl">🌐 Connected peers</div>
+      <div class="net-lbl">🔗 Nodes on-chain</div>
     </div>
     <div class="net-card">
       <div id="stat-verified" class="net-num">—</div>
@@ -812,13 +812,50 @@
 
 <script>
 (function() {
-  // ── Config ─────────────────────────────────────────────────────────────────
-  // In prod, point to public bootstrap nodes.
-  // In dev, the local node at 4888 is tried.
-  const NODES = [
-    "http://localhost:4888",
-    // "https://node1.soulprint.digital",  // ← future public bootstrap
-  ];
+  // ── On-chain PeerRegistry config ───────────────────────────────────────────
+  const RPC_URL      = "https://sepolia.base.org";
+  const PEER_REGISTRY = "0x452fb66159dFCfC13f2fD9627aA4c56886BfB15b";
+
+  // getAllPeers() selector: keccak256("getAllPeers()")[0..4]
+  const GET_ALL_PEERS_SIG = "0x60d7a278";
+
+  async function fetchOnChainPeers() {
+    try {
+      const res = await fetch(RPC_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0", id: 1, method: "eth_call",
+          params: [{ to: PEER_REGISTRY, data: GET_ALL_PEERS_SIG }, "latest"]
+        }),
+        signal: AbortSignal.timeout(5000)
+      });
+      const json = await res.json();
+      return decodeGetAllPeers(json.result || "0x");
+    } catch { return []; }
+  }
+
+  // Decode ABI-encoded tuple array from getAllPeers()
+  // struct Peer { string peerDid; string peerId; string multiaddr; uint256 score; uint256 lastSeen; }
+  function decodeGetAllPeers(hex) {
+    try {
+      if (!hex || hex === "0x") return [];
+      // Use a simple approach: extract readable strings (DIDs, peerIds, multiaddrs)
+      const raw = hex.slice(2);
+      const peers = [];
+      // Find did:key patterns
+      const didMatches = [...(hex.matchAll(/6469643a6b65795b0-9a-f]*/gi) || [])];
+      // Fallback: count 32-byte slots to get array length
+      const buf = new Uint8Array(raw.match(/.{2}/g).map(b => parseInt(b, 16)));
+      const view = new DataView(buf.buffer);
+      // First 32 bytes = offset to array, next 32 = array length
+      if (buf.length < 64) return [];
+      const arrayLen = Number(BigInt("0x" + raw.slice(64, 128)));
+      if (arrayLen === 0 || arrayLen > 1000) return [];
+      // Return count — we'll show it as registered peers
+      return Array.from({ length: arrayLen }, (_, i) => ({ index: i }));
+    } catch { return []; }
+  }
 
   // ── Canvas P2P animation ───────────────────────────────────────────────────
   const canvas  = document.getElementById("p2p-canvas");
@@ -987,52 +1024,36 @@
   }
 
   async function fetchStats() {
-    for (const nodeUrl of NODES) {
-      try {
-        const r = await fetch(nodeUrl + "/network/stats", { signal: AbortSignal.timeout(3000) });
-        if (!r.ok) continue;
-        const d = await r.json();
+    const peers = await fetchOnChainPeers();
+    const peerCount = peers.length;
 
-        // Update live nodes to reflect real peer count
-        const peerCount = d.total_peers ?? Math.max(d.known_peers || 0, d.p2p_peers || 0);
-        nodes[0].color   = "#7c6cf5";
-        nodes[0].verified = true;
-        // Mark peers as active
-        for (let i = 1; i <= Math.min(peerCount, 5); i++) {
-          nodes[i].color = "#4ade80";
-          nodes[i].verified = true;
-        }
+    if (peerCount > 0) {
+      // Update canvas nodes to reflect real on-chain peer count
+      nodes[0].color    = "#7c6cf5";
+      nodes[0].verified = true;
+      for (let i = 1; i <= Math.min(peerCount, NODE_COUNT - 1); i++) {
+        nodes[i].color    = "#4ade80";
+        nodes[i].verified = true;
+      }
 
-        animateNum("stat-peers",     peerCount);
-        animateNum("stat-verified",  d.verified_identities || 0);
-        animateNum("stat-reputation", d.reputation_profiles || 0);
-        updateOverlay(d);
+      animateNum("stat-peers", peerCount);
+      document.getElementById("net-did").textContent  = PEER_REGISTRY;
+      document.getElementById("net-hash").textContent = "Base Sepolia · on-chain";
+      document.getElementById("net-uptime").textContent = "contract: " + PEER_REGISTRY.slice(0,10) + "…";
 
-        // MCPs from /mcps/verified
-        const mr = await fetch(nodeUrl + "/mcps/verified", { signal: AbortSignal.timeout(3000) }).catch(() => null);
-        if (mr && mr.ok) {
-          const md = await mr.json();
-          animateNum("stat-mcps", md.total || 0);
-        }
-
-        setStatus(true);
-        connected = true;
-        return;
-      } catch { /* try next */ }
-    }
-
-    // No node reachable — show zeros with offline state
-    if (!connected) {
-      ["stat-peers","stat-verified","stat-reputation","stat-mcps"].forEach(id => {
-        document.getElementById(id).textContent = "0";
-      });
-      document.getElementById("net-did").textContent = "No node connected";
-      setStatus(false);
+      setStatus(true);
+      connected = true;
+    } else {
+      if (!connected) {
+        document.getElementById("stat-peers").textContent = "0";
+        document.getElementById("net-did").textContent    = "Reading blockchain…";
+        setStatus(false);
+      }
     }
   }
 
   fetchStats();
-  setInterval(fetchStats, 10000);   // refresh every 10s
+  setInterval(fetchStats, 30000);   // refresh every 30s (on-chain data)
 })();
 </script>
 
