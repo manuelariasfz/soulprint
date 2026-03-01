@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "soulprint-py"
+version = "0.1.0"
+description = "Python SDK for the Soulprint decentralized identity protocol"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.9"
+authors = [
+  { name = "Felipe Arias", email = "manuelariasfz@gmail.com" }
+]
+keywords = ["soulprint", "identity", "did", "kyc", "zk", "Colombia", "registraduria"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Security",
+  "Topic :: Internet",
+]
+dependencies = [
+  "httpx>=0.25.0",
+]
+
+[project.optional-dependencies]
+fastapi = ["fastapi>=0.100.0", "starlette>=0.27.0"]
+django = ["django>=4.0"]
+dev = [
+  "pytest>=7.0",
+  "pytest-asyncio>=0.23",
+  "respx>=0.20",
+  "fastapi>=0.100.0",
+  "httpx>=0.25.0",
+]
+
+[project.urls]
+Homepage = "https://soulprint.digital"
+Repository = "https://github.com/manuelariasfz/soulprint"
+Documentation = "https://soulprint.digital/docs"
+"Bug Tracker" = "https://github.com/manuelariasfz/soulprint/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["soulprint*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
