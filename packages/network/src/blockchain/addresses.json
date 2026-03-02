@@ -1,3 +1,7 @@
 {
-  "PeerRegistry": "0x452fb66159dFCfC13f2fD9627aA4c56886BfB15b"
+  "PeerRegistry": "0x452fb66159dFCfC13f2fD9627aA4c56886BfB15b",
+  "NullifierRegistry": "0xf328383BAed260683Ba5Aa94966ACe0C30f43ED4",
+  "ReputationRegistry": "0x546830658b2de9eC82cc23463143dEC1B24458e1",
+  "ProtocolThresholds": "0xD8f78d65b35806101672A49801b57F743f2D2ab1",
+  "MCPRegistry": "0x59EA3c8f60ecbAe22B4c323A8dDc2b0BCd9D3C2a"
 }
