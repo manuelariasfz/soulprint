@@ -715,99 +715,53 @@
 </section>
 
 <!-- ══ LIVE DEMO ══ -->
-<section id="demo" style="background:var(--bg2);max-width:100%;padding:5rem 2rem">
-<div style="max-width:680px;margin:0 auto;text-align:center">
-  <div class="section-label">Live Demo</div>
-  <h2>Try it live — <span>Verify a Colombian cédula</span></h2>
-  <p class="section-sub" style="margin:1rem auto 2rem">Enter any cédula number and date of birth to check its status with Registraduría Nacional</p>
+<section id="demo" style="background:var(--bg2);padding:5rem 2rem">
+<div style="max-width:700px;margin:0 auto;text-align:center">
+  <div class="section-label">Try it</div>
+  <h2>Verify your identity <span>in 3 steps</span></h2>
+  <p class="section-sub">
+    100% local — your ID and selfie never leave your device.<br>
+    A ZK proof is generated on-device and your nullifier is registered on Base Sepolia.
+  </p>
 
-  <div style="background:var(--bg3);border:1px solid var(--border);border-radius:16px;padding:2rem;text-align:left">
-    <form id="cedula-form" onsubmit="verifyCedula(event)">
-      <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1rem">
-        <div style="flex:2;min-width:180px">
-          <label style="display:block;font-size:.8rem;color:var(--muted);margin-bottom:.4rem">Número de cédula</label>
-          <input id="cedula-input" type="text" inputmode="numeric" pattern="[0-9]+" placeholder="1234567890"
-            style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:.65rem 1rem;color:var(--text);font-size:1rem;outline:none;transition:border-color .2s"
-            onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"
-            required>
-        </div>
-        <div style="flex:1;min-width:160px">
-          <label style="display:block;font-size:.8rem;color:var(--muted);margin-bottom:.4rem">Fecha de nacimiento</label>
-          <input id="fechanac-input" type="date"
-            style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:.65rem 1rem;color:var(--text);font-size:1rem;outline:none;transition:border-color .2s;color-scheme:dark"
-            onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"
-            required>
-        </div>
-      </div>
-      <button type="submit" id="cedula-btn"
-        style="width:100%;background:var(--accent);color:#fff;border:none;border-radius:8px;padding:.75rem 1.5rem;font-size:1rem;font-weight:600;cursor:pointer;transition:background .2s,transform .1s"
-        onmouseover="this.style.background='var(--accent2)'" onmouseout="this.style.background='var(--accent)'"
-        onmousedown="this.style.transform='translateY(1px)'" onmouseup="this.style.transform=''">
-        Verificar →
-      </button>
-    </form>
-
-    <div id="cedula-result" style="margin-top:1.25rem;display:none"></div>
-
-    <p style="margin-top:1.5rem;font-size:.75rem;color:var(--muted);line-height:1.5;border-top:1px solid var(--border);padding-top:1rem">
-      Esta consulta se realiza en tiempo real contra la base de datos de la Registraduría Nacional. No almacenamos ningún dato.
-    </p>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1.5rem;margin:2.5rem 0;text-align:left">
+    <div style="background:var(--bg);border:1px solid rgba(124,108,245,.2);border-radius:14px;padding:1.5rem">
+      <div style="font-size:1.8rem;margin-bottom:.75rem">📸</div>
+      <div style="font-weight:700;color:var(--text);margin-bottom:.4rem">1. Scan your ID</div>
+      <div style="color:var(--muted);font-size:.88rem">Photo of your cédula. OCR reads the MRZ locally — nothing uploaded.</div>
+    </div>
+    <div style="background:var(--bg);border:1px solid rgba(124,108,245,.2);border-radius:14px;padding:1.5rem">
+      <div style="font-size:1.8rem;margin-bottom:.75rem">🤳</div>
+      <div style="font-weight:700;color:var(--text);margin-bottom:.4rem">2. Take a selfie</div>
+      <div style="color:var(--muted);font-size:.88rem">Face match runs locally via InsightFace. No cloud, no biometric storage.</div>
+    </div>
+    <div style="background:var(--bg);border:1px solid rgba(124,108,245,.2);border-radius:14px;padding:1.5rem">
+      <div style="font-size:1.8rem;margin-bottom:.75rem">⛓️</div>
+      <div style="font-weight:700;color:var(--text);margin-bottom:.4rem">3. ZK proof on-chain</div>
+      <div style="color:var(--muted);font-size:.88rem">844-constraint circuit proves identity. Nullifier anchored to Base Sepolia forever.</div>
+    </div>
   </div>
+
+  <div style="background:var(--bg);border:1px solid rgba(74,222,128,.15);border-radius:14px;padding:1.5rem 2rem;margin-bottom:2rem;text-align:left">
+    <div style="font-family:monospace;font-size:.87rem;line-height:1.8;color:#a78bfa">
+      <span style="color:#4b5563"># Install once</span><br>
+      <span style="color:#e5e7eb">npx soulprint install-deps</span><br><br>
+      <span style="color:#4b5563"># Verify yourself</span><br>
+      <span style="color:#e5e7eb">npx soulprint verify-me</span><br><br>
+      <span style="color:#4ade80">✅ DID: did:soulprint:0xabc... · registered on Base Sepolia</span>
+    </div>
+  </div>
+
+  <div style="display:inline-flex;gap:.75rem;flex-wrap:wrap;justify-content:center">
+    <a class="btn-primary" href="https://github.com/manuelariasfz/soulprint#quick-start" target="_blank">Get started ↗</a>
+    <a class="btn-secondary" href="docs/quickstart.html">Read the docs →</a>
+  </div>
+
+  <p style="color:var(--muted);font-size:.78rem;margin-top:1.5rem">
+    🇨🇴 Colombian cédula · ZK circuit: 844 constraints · Prove time: ~564ms · 0 PII stored
+  </p>
 </div>
 </section>
-
-<script>
-async function verifyCedula(e) {
-  e.preventDefault();
-  const numero   = document.getElementById('cedula-input').value.trim();
-  const fechaNac = document.getElementById('fechanac-input').value;
-  const resultEl = document.getElementById('cedula-result');
-  const btn      = document.getElementById('cedula-btn');
-
-  resultEl.style.display = 'block';
-  resultEl.innerHTML = `<div style="display:flex;align-items:center;gap:.75rem;color:var(--muted)">
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="animation:spin 1s linear infinite"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
-    Consultando Registraduría...
-  </div>`;
-  btn.disabled = true;
-  btn.style.opacity = '0.7';
-
-  try {
-    const url = `https://soulprint-node-production.up.railway.app/verify/cedula?numero=${encodeURIComponent(numero)}&fechaNac=${encodeURIComponent(fechaNac)}`;
-    const res = await Promise.race([
-      fetch(url),
-      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 10000))
-    ]);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-
-    const fecha = new Date().toLocaleDateString('es-CO', { day:'2-digit', month:'2-digit', year:'numeric' });
-    if (data.vigente) {
-      resultEl.innerHTML = `
-        <div style="background:rgba(74,222,128,.08);border:1px solid rgba(74,222,128,.3);border-radius:10px;padding:1rem 1.25rem">
-          <div style="font-size:1.1rem;font-weight:700;color:#4ade80;margin-bottom:.3rem">✅ Cédula ${numero} — VIGENTE</div>
-          <div style="font-size:.82rem;color:var(--muted)">Verificado el ${fecha} · Via Soulprint Validator Network</div>
-        </div>`;
-    } else {
-      resultEl.innerHTML = `
-        <div style="background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.3);border-radius:10px;padding:1rem 1.25rem">
-          <div style="font-size:1.1rem;font-weight:700;color:#f87171">❌ Cédula ${numero} — NO VIGENTE</div>
-        </div>`;
-    }
-  } catch (err) {
-    resultEl.innerHTML = `
-      <div style="background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.3);border-radius:10px;padding:1rem 1.25rem;color:#fbbf24">
-        ⚠️ No se pudo conectar al validador. Intenta de nuevo.
-      </div>`;
-  } finally {
-    btn.disabled = false;
-    btn.style.opacity = '1';
-  }
-}
-</script>
-<style>
-@keyframes spin { to { transform: rotate(360deg); } }
-</style>
 
 <!-- ══ P2P NETWORK ══ -->
 <section id="network" style="background:var(--bg);max-width:100%;padding:5rem 2rem;overflow:hidden">

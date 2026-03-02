@@ -3,7 +3,7 @@ FROM node:22-slim
 WORKDIR /app
 
 # v0.6.0 — blockchain-first, no libp2p
-RUN npm install -g soulprint-network@0.6.3 --prefer-online
+RUN npm install -g soulprint-network@0.6.4 --prefer-online
 
 ENV SOULPRINT_PORT=4888
 ENV PORT=4888
