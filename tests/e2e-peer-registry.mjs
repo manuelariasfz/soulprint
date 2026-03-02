@@ -16,8 +16,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const PEER_REGISTRY_ADDRESS = "0x452fb66159dFCfC13f2fD9627aA4c56886BfB15b";
 const RPC = "https://sepolia.base.org";
-const ADMIN_KEY = "0x***REMOVED***";
-const ADMIN_TOKEN = "***REMOVED***";
+const ADMIN_KEY = process.env.ADMIN_PRIVATE_KEY ?? "";
+const ADMIN_TOKEN = process.env.ADMIN_TOKEN || "";
 const NODE1_URL = "http://localhost:4888";
 const NODE2_URL = "http://localhost:4889";
 

@@ -54,7 +54,7 @@ const { getCodeIntegrity, isCodeApproved, computeRuntimeHash } = await import(
   "../packages/network/dist/code-integrity.js"
 );
 
-const PRIV_KEY = "0x***REMOVED***";
+const PRIV_KEY = process.env.ADMIN_PRIVATE_KEY ?? "";
 const RPC      = "https://sepolia.base.org";
 
 function makeLiveClient() {

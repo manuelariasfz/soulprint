@@ -47,7 +47,7 @@ const { SoulprintBlockchainClient, loadBlockchainConfig, ProposalState } = await
 function makeClient() {
   const config = {
     rpcUrl:          "https://sepolia.base.org",
-    privateKey:      process.env.SOULPRINT_PRIVATE_KEY ?? "0x***REMOVED***",
+    privateKey:      process.env.SOULPRINT_PRIVATE_KEY ?? process.env.ADMIN_PRIVATE_KEY ?? "",
     registryAddr:    deployment.contracts.SoulprintRegistry,
     ledgerAddr:      deployment.contracts.AttestationLedger,
     validatorRegAddr: deployment.contracts.ValidatorRegistry,
@@ -263,7 +263,7 @@ await test("loadBlockchainConfig con env vars → incluye governanceAddr", () =>
   const savedKey  = process.env.SOULPRINT_PRIVATE_KEY;
   const savedNet  = process.env.SOULPRINT_NETWORK;
   process.env.SOULPRINT_RPC_URL      = "https://sepolia.base.org";
-  process.env.SOULPRINT_PRIVATE_KEY  = "0x***REMOVED***";
+  process.env.SOULPRINT_PRIVATE_KEY  = process.env.ADMIN_PRIVATE_KEY ?? "";
   process.env.SOULPRINT_NETWORK      = "base-sepolia";
   const cfg = loadBlockchainConfig();
   // Restaurar env antes de asserts

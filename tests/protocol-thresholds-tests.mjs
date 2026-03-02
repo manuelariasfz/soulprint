@@ -33,7 +33,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const CONTRACT_ADDRESS  = "0xD8f78d65b35806101672A49801b57F743f2D2ab1";
-const ADMIN_PRIVATE_KEY = "0x***REMOVED***";
+const ADMIN_PRIVATE_KEY = process.env.ADMIN_PRIVATE_KEY ?? "";
 const RPC_URL           = "https://sepolia.base.org";
 const NODE_URL          = "http://localhost:4888";
 
